@@ -1,0 +1,242 @@
+@page "/messages/{MessageId:guid}"
+@implements IDisposable
+@inject IBrokerAdminClient Broker
+@inject ILiveFeed Live
+@inject TimeProvider Time
+@inject Microsoft.Extensions.Options.IOptions<DashboardOptions> Options
+
+<PageTitle>Message @Format.Short(MessageId) · Broker Dashboard</PageTitle>
+
+<header class="page-head">
+    <div>
+        <h1>Message <span class="mono">@Format.Short(MessageId)</span></h1>
+        <div class="sub mono">@MessageId</div>
+    </div>
+    @if (_message is not null)
+    {
+        <StatusBadge Status="@_message.Status" />
+    }
+</header>
+
+@if (_notFound)
+{
+    <div class="notice error" role="alert">
+        <strong>Message not found.</strong> It may have been removed by retention. <a href="messages">Back to messages</a>
+    </div>
+}
+<ErrorNotice Error="@_error" Retry="LoadAsync" />
+
+@if (_message is { } m)
+{
+    <section class="card">
+        <dl class="facts">
+            <div><dt>Topic</dt><dd><a href="@($"messages?topicId={TopicIdOf(m.TopicName)}")">@m.TopicName</a></dd></div>
+            <div><dt>Message type</dt><dd>@m.MessageType</dd></div>
+            <div><dt>Correlation ID</dt><dd><a href="@($"messages?correlationId={Uri.EscapeDataString(m.CorrelationId)}")">@m.CorrelationId</a></dd></div>
+            <div><dt>Publisher</dt><dd>@PublisherName(m.PublisherAppId)</dd></div>
+            <div><dt>Created (UTC)</dt><dd>@Format.Utc(m.CreatedAt)</dd></div>
+            <div><dt>Expires (UTC)</dt><dd>@Format.Utc(m.ExpiresAt)</dd></div>
+            <div><dt>Idempotency key</dt><dd>@(m.IdempotencyKey ?? "—")</dd></div>
+        </dl>
+    </section>
+
+    <div class="two-col">
+        <JsonView Title="Payload" Value="m.Payload" />
+        <JsonView Title="Properties" Value="m.Properties" />
+    </div>
+
+    <section class="card" style="margin-top: 16px">
+        <h2>Deliveries (@m.Deliveries.Count)</h2>
+        @if (m.Deliveries.Count == 0)
+        {
+            <p class="muted">The topic had no subscriptions when this message was published.</p>
+        }
+        @foreach (var d in m.Deliveries)
+        {
+            <div class="delivery" @key="d.DeliveryId">
+                <div class="delivery-head">
+                    <strong>@d.SubscriptionName</strong>
+                    <span class="pill">@d.DeliveryMode</span>
+                    <StatusBadge Status="@d.Status" />
+                    <span class="muted">attempts @d.AttemptCount (@d.TotalAttemptCount in total)</span>
+                    @if (d.DeadLetterReason is not null)
+                    {
+                        <span class="muted">reason: @d.DeadLetterReason</span>
+                        <a href="@($"deadletters?subscriptionId={d.SubscriptionId}")">open in dead letters</a>
+                    }
+                </div>
+                <div class="muted" style="font-size: 12.5px; margin-top: 4px">
+                    @switch (d.Status)
+                    {
+                        case "Pending":
+                            <span>Next attempt at @Format.Utc(d.AvailableAt)</span>
+                            break;
+                        case "Leased":
+                            <span>Leased until @Format.Utc(d.LockedUntil)</span>
+                            break;
+                        case "Completed":
+                        case "Cancelled":
+                            <span>Finished at @Format.Utc(d.CompletedAt)</span>
+                            break;
+                    }
+                    @if (d.ExpiresAt is not null)
+                    {
+                        <span> · expires @Format.Utc(d.ExpiresAt)</span>
+                    }
+                </div>
+                @if (d.Attempts.Count > 0)
+                {
+                    <ol class="timeline" aria-label="Attempts">
+                        @foreach (var a in d.Attempts)
+                        {
+                            <li class="@AttemptKind(a.Outcome)">
+                                <div>
+                                    <strong>Attempt @a.AttemptNumber</strong> · @a.Channel ·
+                                    @if (a.Outcome is { } outcome)
+                                    {
+                                        <StatusBadge Status="@outcome" />
+                                    }
+                                    else
+                                    {
+                                        <StatusBadge Status="Leased" />
+                                    }
+                                    @if (a.HttpStatusCode is { } http)
+                                    {
+                                        <span class="pill">HTTP @http</span>
+                                    }
+                                </div>
+                                <div class="when">@Format.Utc(a.LeasedAt) → @Format.Utc(a.EndedAt) · @Format.Duration(a.DurationMs)</div>
+                                @if (a.ErrorCode is not null || a.ErrorMessage is not null)
+                                {
+                                    <div class="err"><span class="mono">@a.ErrorCode</span> @a.ErrorMessage</div>
+                                }
+                                @if (a.ErrorDetail is not null)
+                                {
+                                    <details><summary class="muted">Error detail</summary><pre><code>@a.ErrorDetail</code></pre></details>
+                                }
+                            </li>
+                        }
+                    </ol>
+                }
+            </div>
+        }
+    </section>
+
+    @if (_related.Count > 0)
+    {
+        <section class="card">
+            <h2>Same correlation ID (@_related.Count)</h2>
+            <div class="table-wrap">
+                <table class="data">
+                    <thead><tr><th>Created</th><th>Message</th><th>Topic</th><th>Type</th><th>Status</th></tr></thead>
+                    <tbody>
+                        @foreach (var r in _related)
+                        {
+                            <tr>
+                                <td>@Format.Utc(r.CreatedAt)</td>
+                                <td class="mono"><a href="@($"messages/{r.MessageId}")">@Format.Short(r.MessageId)</a></td>
+                                <td>@r.TopicName</td>
+                                <td>@r.MessageType</td>
+                                <td><StatusBadge Status="@r.Status" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+}
+
+@code {
+    public const int MaxRelated = 20;
+
+    [Parameter]
+    public Guid MessageId { get; set; }
+
+    private MessageResponse? _message;
+    private List<MessageSummaryResponse> _related = [];
+    private IReadOnlyList<ApplicationResponse> _apps = [];
+    private IReadOnlyList<TopicResponse> _topics = [];
+    private bool _notFound;
+    private string? _error;
+    private RefreshThrottle? _throttle;
+
+    protected override void OnInitialized()
+    {
+        _throttle = new RefreshThrottle(TimeSpan.FromMilliseconds(Options.Value.RefreshThrottleMs), Time);
+        Live.Activity += OnActivity;
+        Live.OverviewChanged += OnOverviewChanged;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _message = null;
+        _related = [];
+        if (_apps.Count == 0)
+        {
+            try
+            {
+                _apps = await Broker.ListApplicationsAsync();
+                _topics = await Broker.ListTopicsAsync();
+            }
+            catch (Exception)
+            {
+                // Names are a nicety; the message itself still loads.
+            }
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _message = await Broker.GetMessageAsync(MessageId);
+            _notFound = false;
+            _error = null;
+            _related = (await Broker.ListMessagesByCorrelationAsync(_message.CorrelationId))
+                .Where(r => r.MessageId != MessageId).Take(MaxRelated).ToList();
+        }
+        catch (MessageBroker.Contracts.Client.BrokerApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            _notFound = true;
+        }
+        catch (Exception ex)
+        {
+            _error = ErrorNotice.Describe(ex);
+        }
+        StateHasChanged();
+    }
+
+    private void OnActivity(IReadOnlyList<MessageActivity> batch)
+    {
+        if (batch.Any(a => a.MessageId == MessageId))
+            _throttle?.Request(() => InvokeAsync(LoadAsync));
+    }
+
+    // Lease expiry and TTL expiry come from maintenance without a message ID; poll while unfinished.
+    private void OnOverviewChanged()
+    {
+        if (_message?.Status == "InProgress")
+            _throttle?.Request(() => InvokeAsync(LoadAsync));
+    }
+
+    private string PublisherName(Guid appId) => _apps.FirstOrDefault(a => a.AppId == appId)?.Name ?? appId.ToString();
+
+    private Guid? TopicIdOf(string name) => _topics.FirstOrDefault(t => t.Name == name)?.TopicId;
+
+    private static string AttemptKind(string? outcome) => outcome switch
+    {
+        "Acked" => "good",
+        "Nacked" or "LeaseExpired" => "warning",
+        null => "info",
+        _ => "",
+    };
+
+    public void Dispose()
+    {
+        Live.Activity -= OnActivity;
+        Live.OverviewChanged -= OnOverviewChanged;
+        _throttle?.Dispose();
+    }
+}

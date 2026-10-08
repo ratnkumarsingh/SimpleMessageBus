@@ -1,0 +1,196 @@
+@page "/topology"
+@inject IBrokerAdminClient Broker
+
+<PageTitle>Topology · Broker Dashboard</PageTitle>
+
+<header class="page-head">
+    <div>
+        <h1>Topology</h1>
+        <div class="sub">Read-only. Change topology through the broker API (see the runbook).</div>
+    </div>
+    <button type="button" class="secondary" @onclick="LoadAsync" disabled="@_loading">Refresh</button>
+</header>
+
+<div class="tabs" role="tablist">
+    <button type="button" role="tab" class="@(_tab == Tab.Topics ? "selected" : "")" aria-selected="@(_tab == Tab.Topics)" @onclick="() => _tab = Tab.Topics">
+        Topics (@_topics.Count)
+    </button>
+    <button type="button" role="tab" class="@(_tab == Tab.Applications ? "selected" : "")" aria-selected="@(_tab == Tab.Applications)" @onclick="() => _tab = Tab.Applications">
+        Applications (@_apps.Count)
+    </button>
+</div>
+
+<ErrorNotice Error="@_error" Retry="LoadAsync" />
+
+<div class="@(_loading ? "refreshing" : "")">
+    @if (_tab == Tab.Topics)
+    {
+        @if (_topics.Count == 0 && !_loading)
+        {
+            <p class="muted">No topics yet.</p>
+        }
+        @foreach (var topic in _topics)
+        {
+            var subs = _subscriptions.GetValueOrDefault(topic.TopicId) ?? [];
+            <section class="card topic" @key="topic.TopicId">
+                <div class="card-head">
+                    <h2>@topic.Name</h2>
+                    <span class="muted">
+                        default TTL @(topic.DefaultTtlSeconds is { } ttl ? $"{ttl} s" : "none") · created @Format.Utc(topic.CreatedAt) ·
+                        <a href="@($"messages?topicId={topic.TopicId}")">messages</a>
+                    </span>
+                </div>
+                @if (subs.Count == 0)
+                {
+                    <p class="muted">No subscriptions: messages published here are stored but delivered nowhere.</p>
+                }
+                else
+                {
+                    <div class="table-wrap">
+                        <table class="data">
+                            <thead>
+                                <tr>
+                                    <th>Subscription</th><th>Mode</th><th>Status</th><th>Endpoint</th><th>Owner</th>
+                                    <th class="num">Max attempts</th><th class="num">Lock</th><th>Retry</th><th class="num">TTL</th>
+                                    <th class="num">Pending</th><th class="num">Leased</th><th class="num">Dead letters</th><th>Push</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var s in subs)
+                                {
+                                    var health = _health.GetValueOrDefault(s.SubscriptionId);
+                                    <tr @key="s.SubscriptionId">
+                                        <td>@s.Name</td>
+                                        <td><span class="pill">@s.DeliveryMode</span></td>
+                                        <td><StatusBadge Status="@s.Status" /></td>
+                                        <td class="mono">@(s.DeliveryMode == "Webhook" ? Format.Host(s.WebhookUrl) : "—")</td>
+                                        <td>@AppName(s.OwnerAppId)</td>
+                                        <td class="num">@s.MaxAttempts</td>
+                                        <td class="num">@s.LockDurationSeconds s</td>
+                                        <td>@s.RetryBaseDelaySeconds s → @s.RetryMaxDelaySeconds s</td>
+                                        <td class="num">@(s.TtlSeconds is { } t ? $"{t} s" : "—")</td>
+                                        <td class="num">@Format.Number(s.Counts.Pending)</td>
+                                        <td class="num">@Format.Number(s.Counts.Leased)</td>
+                                        <td class="num">@Format.Number(s.Counts.DeadLettered)</td>
+                                        <td>
+                                            @if (health?.CircuitState is { } circuit)
+                                            {
+                                                <StatusBadge Status="@circuit" />
+                                            }
+                                            else if (health?.ConnectedClients is { } clients)
+                                            {
+                                                <span>@clients connected</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="muted">—</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+        }
+    }
+    else
+    {
+        <section class="card">
+            <div class="table-wrap">
+                <table class="data">
+                    <thead><tr><th>Application</th><th>Role</th><th>State</th><th>Created</th><th>Permissions</th></tr></thead>
+                    <tbody>
+                        @foreach (var app in _apps)
+                        {
+                            <tr @key="app.AppId">
+                                <td>@app.Name<div class="muted mono">@app.AppId</div></td>
+                                <td>@(app.IsAdmin ? "Admin" : "Application")</td>
+                                <td><StatusBadge Status="@(app.IsActive ? "Active" : "Inactive")" /></td>
+                                <td>@Format.Utc(app.CreatedAt)</td>
+                                <td>
+                                    @if (_permissions.TryGetValue(app.AppId, out var perms))
+                                    {
+                                        @if (perms.Count == 0)
+                                        {
+                                            <span class="muted">none</span>
+                                        }
+                                        @foreach (var p in perms)
+                                        {
+                                            <div><span class="pill">@p.Permission</span> @p.ResourceType @ResourceName(p)</div>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="link" @onclick="() => LoadPermissionsAsync(app.AppId)">Show</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    private enum Tab { Topics, Applications }
+
+    private Tab _tab = Tab.Topics;
+    private IReadOnlyList<TopicResponse> _topics = [];
+    private IReadOnlyList<ApplicationResponse> _apps = [];
+    private Dictionary<Guid, IReadOnlyList<SubscriptionResponse>> _subscriptions = [];
+    private Dictionary<Guid, SubscriptionHealth> _health = [];
+    private readonly Dictionary<Guid, IReadOnlyList<PermissionResponse>> _permissions = [];
+    private bool _loading;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _topics = (await Broker.ListTopicsAsync()).OrderBy(t => t.Name).ToList();
+            _apps = (await Broker.ListApplicationsAsync()).OrderBy(a => a.Name).ToList();
+            var lists = await Task.WhenAll(_topics.Select(t => Broker.ListSubscriptionsAsync(t.TopicId)));
+            _subscriptions = _topics.Zip(lists).ToDictionary(p => p.First.TopicId, p => (IReadOnlyList<SubscriptionResponse>)p.Second.OrderBy(s => s.Name).ToList());
+            _health = (await Broker.GetOverviewAsync(DashboardDefaults.MinWindowMinutes)).Subscriptions.ToDictionary(s => s.SubscriptionId);
+            _permissions.Clear();
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            _error = ErrorNotice.Describe(ex);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadPermissionsAsync(Guid appId)
+    {
+        try
+        {
+            _permissions[appId] = await Broker.ListPermissionsAsync(appId);
+        }
+        catch (Exception ex)
+        {
+            _error = ErrorNotice.Describe(ex);
+        }
+    }
+
+    private string AppName(Guid appId) => _apps.FirstOrDefault(a => a.AppId == appId)?.Name ?? Format.Short(appId);
+
+    private string ResourceName(PermissionResponse p) => p.ResourceType switch
+    {
+        "Topic" => _topics.FirstOrDefault(t => t.TopicId == p.ResourceId)?.Name ?? Format.Short(p.ResourceId),
+        _ => _subscriptions.Values.SelectMany(s => s).FirstOrDefault(s => s.SubscriptionId == p.ResourceId) is { } s
+            ? $"{s.TopicName} / {s.Name}"
+            : Format.Short(p.ResourceId),
+    };
+}

@@ -1,0 +1,293 @@
+@page "/messages"
+@implements IDisposable
+@inject IBrokerAdminClient Broker
+@inject ILiveFeed Live
+@inject NavigationManager Navigation
+@inject TimeProvider Time
+@inject Microsoft.Extensions.Options.IOptions<DashboardOptions> Options
+
+<PageTitle>Messages · Broker Dashboard</PageTitle>
+
+<header class="page-head">
+    <div>
+        <h1>Messages</h1>
+        <div class="sub">Newest first · times in UTC</div>
+    </div>
+</header>
+
+<form class="filter-bar" @onsubmit="Apply" aria-label="Message filters">
+    <div class="field">
+        <label for="f-topic">Topic</label>
+        <select id="f-topic" @bind="_form.TopicId">
+            <option value="">Any topic</option>
+            @foreach (var t in _topics)
+            {
+                <option value="@t.TopicId">@t.Name</option>
+            }
+        </select>
+    </div>
+    <div class="field">
+        <label for="f-status">Status</label>
+        <select id="f-status" @bind="_form.Status">
+            <option value="">Any status</option>
+            <option value="InProgress">In progress</option>
+            <option value="Completed">Completed</option>
+            <option value="PartiallyDeadLettered">Partly dead-lettered</option>
+            <option value="DeadLettered">Dead-lettered</option>
+        </select>
+    </div>
+    <div class="field">
+        <label for="f-type">Message type</label>
+        <input id="f-type" @bind="_form.MessageType" placeholder="PaymentProcessed.v1" />
+    </div>
+    <div class="field">
+        <label for="f-corr">Correlation ID</label>
+        <input id="f-corr" @bind="_form.CorrelationId" />
+    </div>
+    <div class="field">
+        <label for="f-pub">Publisher</label>
+        <select id="f-pub" @bind="_form.PublisherAppId">
+            <option value="">Any publisher</option>
+            @foreach (var a in _apps)
+            {
+                <option value="@a.AppId">@a.Name</option>
+            }
+        </select>
+    </div>
+    <div class="field">
+        <label for="f-from">From (UTC)</label>
+        <input id="f-from" type="datetime-local" @bind="_form.From" />
+    </div>
+    <div class="field">
+        <label for="f-to">To (UTC)</label>
+        <input id="f-to" type="datetime-local" @bind="_form.To" />
+    </div>
+    <div class="actions">
+        <button type="submit" class="primary">Apply</button>
+        <button type="button" class="secondary" @onclick="Clear">Clear</button>
+    </div>
+</form>
+
+<ErrorNotice Error="@_error" Retry="ReloadAsync" />
+
+@if (_newCount > 0)
+{
+    <div class="notice info" role="status">
+        <span>@_newCount new @(_newCount == 1 ? "message" : "messages") published@(Filtered ? " (some may not match the filters)" : "").</span>
+        <button type="button" class="link" @onclick="ReloadAsync">Show newest</button>
+    </div>
+}
+
+<section class="card @(_loading ? "refreshing" : "")">
+    @if (_rows.Count == 0 && !_loading && _error is null)
+    {
+        <p class="muted">No messages match.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="data">
+                <thead>
+                    <tr>
+                        <th>Created</th><th>Message</th><th>Topic</th><th>Type</th><th>Correlation</th><th>Publisher</th>
+                        <th>Status</th><th class="num">Delivered</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var m in _rows)
+                    {
+                        <tr @key="m.MessageId" class="@(_fresh.Contains(m.MessageId) ? "fresh" : "")">
+                            <td title="@Format.Utc(m.CreatedAt)">@Format.Utc(m.CreatedAt)</td>
+                            <td class="mono"><a href="@($"messages/{m.MessageId}")">@Format.Short(m.MessageId)</a></td>
+                            <td>@m.TopicName</td>
+                            <td>@m.MessageType</td>
+                            <td class="wrap">@m.CorrelationId</td>
+                            <td>@m.PublisherName</td>
+                            <td><StatusBadge Status="@m.Status" /></td>
+                            <td class="num">@m.Completed / @m.DeliveryCount</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (_cursor is not null)
+        {
+            <div class="more"><button type="button" class="secondary" @onclick="LoadMoreAsync" disabled="@_loading">Load more</button></div>
+        }
+    }
+</section>
+
+@code {
+    public const int PageSize = 50;
+    /// <summary>Visible rows refreshed per live update; more changes wait for the next one.</summary>
+    public const int MaxRowRefresh = 25;
+
+    [SupplyParameterFromQuery(Name = "topicId")] public Guid? TopicId { get; set; }
+    [SupplyParameterFromQuery(Name = "status")] public string? Status { get; set; }
+    [SupplyParameterFromQuery(Name = "messageType")] public string? MessageType { get; set; }
+    [SupplyParameterFromQuery(Name = "correlationId")] public string? CorrelationId { get; set; }
+    [SupplyParameterFromQuery(Name = "publisherAppId")] public Guid? PublisherAppId { get; set; }
+    [SupplyParameterFromQuery(Name = "from")] public string? From { get; set; }
+    [SupplyParameterFromQuery(Name = "to")] public string? To { get; set; }
+
+    private sealed class FilterForm
+    {
+        public string TopicId { get; set; } = "";
+        public string Status { get; set; } = "";
+        public string? MessageType { get; set; }
+        public string? CorrelationId { get; set; }
+        public string PublisherAppId { get; set; } = "";
+        public DateTime? From { get; set; }
+        public DateTime? To { get; set; }
+    }
+
+    private readonly FilterForm _form = new();
+    private readonly List<MessageListItem> _rows = [];
+    private readonly HashSet<Guid> _fresh = [];
+    private readonly HashSet<Guid> _changed = [];
+    private IReadOnlyList<TopicResponse> _topics = [];
+    private IReadOnlyList<ApplicationResponse> _apps = [];
+    private MessageSearchRequest _query = new();
+    private long? _cursor;
+    private int _newCount;
+    private bool _loading;
+    private string? _error;
+    private RefreshThrottle? _throttle;
+
+    private bool Filtered => _query != new MessageSearchRequest { PageSize = PageSize };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _throttle = new RefreshThrottle(TimeSpan.FromMilliseconds(Options.Value.RefreshThrottleMs), Time);
+        Live.Activity += OnActivity;
+        try
+        {
+            _topics = await Broker.ListTopicsAsync();
+            _apps = await Broker.ListApplicationsAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ErrorNotice.Describe(ex);
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _form.TopicId = TopicId?.ToString() ?? "";
+        _form.Status = Status ?? "";
+        _form.MessageType = MessageType;
+        _form.CorrelationId = CorrelationId;
+        _form.PublisherAppId = PublisherAppId?.ToString() ?? "";
+        _form.From = Format.ParseUtc(From);
+        _form.To = Format.ParseUtc(To);
+        _query = new MessageSearchRequest
+        {
+            TopicId = TopicId,
+            Status = Blank(Status),
+            MessageType = Blank(MessageType),
+            CorrelationId = Blank(CorrelationId),
+            PublisherAppId = PublisherAppId,
+            From = _form.From,
+            To = _form.To,
+            PageSize = PageSize,
+        };
+        await ReloadAsync();
+    }
+
+    private void Apply() => Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(new Dictionary<string, object?>
+    {
+        ["topicId"] = Guid.TryParse(_form.TopicId, out var topic) ? topic : null,
+        ["status"] = Blank(_form.Status),
+        ["messageType"] = Blank(_form.MessageType),
+        ["correlationId"] = Blank(_form.CorrelationId),
+        ["publisherAppId"] = Guid.TryParse(_form.PublisherAppId, out var app) ? app : null,
+        ["from"] = Format.InputUtc(_form.From),
+        ["to"] = Format.InputUtc(_form.To),
+    }));
+
+    private void Clear() => Navigation.NavigateTo("messages");
+
+    private async Task ReloadAsync()
+    {
+        _newCount = 0;
+        _fresh.Clear();
+        await LoadAsync(cursor: null);
+    }
+
+    private Task LoadMoreAsync() => LoadAsync(_cursor);
+
+    private async Task LoadAsync(long? cursor)
+    {
+        _loading = true;
+        try
+        {
+            var page = await Broker.SearchMessagesAsync(_query with { Cursor = cursor });
+            if (cursor is null)
+                _rows.Clear();
+            _rows.AddRange(page.Items);
+            _cursor = page.NextCursor;
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            _error = ErrorNotice.Describe(ex);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OnActivity(IReadOnlyList<MessageActivity> batch) => _ = InvokeAsync(() =>
+    {
+        _newCount += batch.Count(a => a.Kind == ActivityKinds.Published);
+        var visible = _rows.Select(r => r.MessageId).ToHashSet();
+        foreach (var a in batch.Where(a => a.Kind == ActivityKinds.DeliveryChanged && visible.Contains(a.MessageId)))
+            _changed.Add(a.MessageId);
+        if (_changed.Count > 0)
+            _throttle?.Request(() => InvokeAsync(RefreshChangedRowsAsync));
+        StateHasChanged();
+    });
+
+    /// <summary>Re-reads the rows whose deliveries changed and updates them in place, so nothing jumps.</summary>
+    private async Task RefreshChangedRowsAsync()
+    {
+        var ids = _changed.Take(MaxRowRefresh).ToList();
+        foreach (var id in ids)
+        {
+            _changed.Remove(id);
+            var index = _rows.FindIndex(r => r.MessageId == id);
+            if (index < 0)
+                continue;
+            try
+            {
+                var m = await Broker.GetMessageAsync(id);
+                _rows[index] = _rows[index] with
+                {
+                    Status = m.Status,
+                    DeliveryCount = m.Deliveries.Count,
+                    Pending = m.Deliveries.Count(d => d.Status == "Pending"),
+                    Leased = m.Deliveries.Count(d => d.Status == "Leased"),
+                    Completed = m.Deliveries.Count(d => d.Status == "Completed"),
+                    DeadLettered = m.Deliveries.Count(d => d.Status == "DeadLettered"),
+                };
+                _fresh.Add(id);
+            }
+            catch (Exception)
+            {
+                // The next refresh or live update tries again; a purged message simply keeps its old row.
+            }
+        }
+        if (_changed.Count > 0)
+            _throttle?.Request(() => InvokeAsync(RefreshChangedRowsAsync));
+        StateHasChanged();
+    }
+
+    private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    public void Dispose()
+    {
+        Live.Activity -= OnActivity;
+        _throttle?.Dispose();
+    }
+}
