@@ -1,0 +1,36 @@
+@inject IJSRuntime JS
+
+<div class="json">
+    <div class="json-head">
+        <span>@Title</span>
+        <button type="button" class="link" @onclick="CopyAsync">@(_copied ? "Copied" : "Copy")</button>
+    </div>
+    <pre><code>@_text</code></pre>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = "";
+
+    [Parameter]
+    public System.Text.Json.JsonElement? Value { get; set; }
+
+    private string _text = "";
+    private bool _copied;
+
+    protected override void OnParametersSet() => _text = Value is null ? "(none)" : Format.Json(Value);
+
+    private async Task CopyAsync()
+    {
+        try
+        {
+            var module = await JS.InvokeAsync<IJSObjectReference>("import", "./dashboard.js");
+            _copied = await module.InvokeAsync<bool>("copyText", _text);
+            await module.DisposeAsync();
+        }
+        catch (JSException)
+        {
+            _copied = false;
+        }
+    }
+}

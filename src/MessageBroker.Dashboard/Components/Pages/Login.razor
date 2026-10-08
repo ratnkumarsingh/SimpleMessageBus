@@ -1,0 +1,80 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@layout BareLayout
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@inject AdminKeyValidator Validator
+@inject NavigationManager Navigation
+
+<PageTitle>Sign in · Broker Dashboard</PageTitle>
+
+<section class="login card">
+    <h1>Broker dashboard</h1>
+    <p class="muted">Sign in with a broker <strong>Admin</strong> API key. The key stays on this server, inside an encrypted cookie.</p>
+
+    <EditForm Model="Input" method="post" FormName="login" OnValidSubmit="SignInAsync">
+        <DataAnnotationsValidator />
+        <label for="apiKey">Admin API key</label>
+        <InputText id="apiKey" type="password" @bind-Value="Input!.ApiKey" autocomplete="off" spellcheck="false" placeholder="mbk_…" />
+        <ValidationMessage For="() => Input!.ApiKey" />
+        @if (_error is not null)
+        {
+            <p class="error" role="alert">@_error</p>
+        }
+        <button type="submit" class="primary">Sign in</button>
+    </EditForm>
+</section>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private LoginInput? Input { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    private string? _error;
+
+    protected override void OnInitialized() => Input ??= new();
+
+    private async Task SignInAsync()
+    {
+        var key = Input!.ApiKey!.Trim();
+        var result = await Validator.ValidateAsync(key, HttpContext.RequestAborted);
+        _error = result switch
+        {
+            AdminKeyValidator.Result.NotAdmin => "That key is valid, but its application is not an Admin.",
+            AdminKeyValidator.Result.Invalid => "The broker did not accept that key.",
+            AdminKeyValidator.Result.BrokerUnavailable => "The broker could not be reached. Try again shortly.",
+            _ => null,
+        };
+        if (_error is not null)
+            return;
+
+        var prefix = DashboardClaims.PrefixOf(key);
+        var identity = new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.Name, prefix),
+            new Claim(DashboardClaims.KeyPrefix, prefix),
+            new Claim(DashboardClaims.ApiKey, key),
+        ], CookieAuthenticationDefaults.AuthenticationScheme);
+        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
+        Navigation.NavigateTo(SafeReturnUrl(ReturnUrl));
+    }
+
+    /// <summary>Only local paths, so the sign-in page cannot be used as an open redirect.</summary>
+    internal static string SafeReturnUrl(string? url) =>
+        url is { Length: > 0 } && url[0] == '/' && !url.StartsWith("//") && !url.StartsWith("/\\") && !url.StartsWith("/login")
+            ? url
+            : "/";
+
+    public sealed class LoginInput
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Enter an API key.")]
+        public string? ApiKey { get; set; }
+    }
+}

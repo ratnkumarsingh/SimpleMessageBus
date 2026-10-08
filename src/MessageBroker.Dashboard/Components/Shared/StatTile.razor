@@ -1,0 +1,23 @@
+<div class="tile @(Emphasis ? "emphasis" : "")">
+    <div class="tile-label">@Label</div>
+    <div class="tile-value">@Format.Compact(Value)</div>
+    @if (Note is not null)
+    {
+        <div class="tile-note">@Note</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Label { get; set; } = "";
+
+    [Parameter]
+    public long Value { get; set; }
+
+    [Parameter]
+    public string? Note { get; set; }
+
+    /// <summary>Marks a tile that needs attention (for example a non-empty DLQ).</summary>
+    [Parameter]
+    public bool Emphasis { get; set; }
+}

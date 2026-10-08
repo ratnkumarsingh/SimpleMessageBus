@@ -1,0 +1,53 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject ILiveFeed Live
+
+<div class="shell">
+    <aside class="nav" aria-label="Main">
+        <div class="brand">
+            <svg width="20" height="20" viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3" fill="var(--series-1)" /><path d="M3 11h2V7H3zm4 0h2V4H7zm4 0h2V8h-2z" fill="#fff" /></svg>
+            <span>Broker</span>
+        </div>
+        <nav>
+            <NavLink href="" Match="NavLinkMatch.All">Overview</NavLink>
+            <NavLink href="messages">Messages</NavLink>
+            <NavLink href="deadletters">Dead letters</NavLink>
+            <NavLink href="topology">Topology</NavLink>
+        </nav>
+        <div class="nav-foot">
+            <LiveBadge State="Live.State" />
+            <AuthorizeView>
+                <Authorized>
+                    <span class="operator" title="Signed in with this admin key">@context.User.FindFirst(DashboardClaims.KeyPrefix)?.Value</span>
+                    <form method="post" action="logout">
+                        <AntiforgeryToken />
+                        <button type="submit" class="link">Sign out</button>
+                    </form>
+                </Authorized>
+            </AuthorizeView>
+        </div>
+    </aside>
+    <main>
+        @Body
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    protected override void OnInitialized() => Live.StateChanged += OnStateChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await Live.StartAsync();
+    }
+
+    private void OnStateChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Live.StateChanged -= OnStateChanged;
+}

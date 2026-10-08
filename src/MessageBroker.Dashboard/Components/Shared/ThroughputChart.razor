@@ -1,0 +1,87 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+@* Four series over the overview window: one axis, 2px lines, legend with line keys, a crosshair
+   tooltip (dashboard.js) and a table view, since two light-mode hues sit below 3:1 contrast. *@
+<figure class="chart" aria-label="Throughput per minute">
+    <figcaption>
+        <ul class="legend">
+            @foreach (var s in Series)
+            {
+                <li><span class="line-key" style="background: var(@s.Color)"></span>@s.Label <strong>@Format.Number(Points.Sum(s.Value))</strong></li>
+            }
+        </ul>
+        <button type="button" class="link" @onclick="() => _table = !_table">@(_table ? "Show chart" : "Show table")</button>
+    </figcaption>
+
+    <div class="chart-host" tabindex="0" @ref="_host" hidden="@_table"
+         aria-label="Throughput chart; use the arrow keys to read each minute">
+        <svg role="img" aria-hidden="true"></svg>
+        <div class="chart-tip" hidden></div>
+    </div>
+
+    @if (_table)
+    {
+        <div class="table-wrap">
+            <table class="data">
+                <thead><tr><th>Minute (UTC)</th>@foreach (var s in Series) { <th class="num">@s.Label</th> }</tr></thead>
+                <tbody>
+                    @foreach (var p in Points.Reverse())
+                    {
+                        <tr><td>@(Format.Time(p.Minute)[..5])</td>@foreach (var s in Series) { <td class="num">@Format.Number(s.Value(p))</td> }</tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</figure>
+
+@code {
+    private sealed record SeriesDef(string Key, string Label, string Color, Func<ThroughputPoint, int> Value);
+
+    // Fixed categorical order (slots 1–4); a series keeps its color whatever the data.
+    private static readonly SeriesDef[] Series =
+    [
+        new("published", "Published", "--series-1", p => p.Published),
+        new("completed", "Completed", "--series-2", p => p.Completed),
+        new("failed", "Failed attempts", "--series-3", p => p.Failed),
+        new("deadLettered", "Dead-lettered", "--series-4", p => p.DeadLettered),
+    ];
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<ThroughputPoint> Points { get; set; } = [];
+
+    private ElementReference _host;
+    private IJSObjectReference? _module;
+    private bool _table;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_table || Points.Count == 0)
+            return;
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./dashboard.js");
+            await _module.InvokeVoidAsync("renderThroughput", _host, new
+            {
+                series = Series.Select(s => new { key = s.Key, label = s.Label, color = s.Color }),
+                points = Points.Select(p => new { minute = p.Minute, published = p.Published, completed = p.Completed, failed = p.Failed, deadLettered = p.DeadLettered }),
+            });
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_module is not null)
+                await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+}

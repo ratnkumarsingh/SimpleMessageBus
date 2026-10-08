@@ -1,0 +1,37 @@
+@* Message, delivery and subscription states. Always icon + label, never color alone. *@
+<span class="status @Kind" title="@Status"><span class="icon" aria-hidden="true">@Icon</span>@Label</span>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Status { get; set; } = "";
+
+    private string Kind => Status switch
+    {
+        "Completed" or "Acked" or "Active" or "Closed" => "good",
+        "InProgress" or "Pending" or "Leased" or "HalfOpen" => "info",
+        "PartiallyDeadLettered" or "Paused" or "Nacked" or "LeaseExpired" => "warning",
+        "DeadLettered" or "Open" => "critical",
+        _ => "neutral",
+    };
+
+    private string Icon => Kind switch
+    {
+        "good" => "✓",
+        "info" => "●",
+        "warning" => "!",
+        "critical" => "✕",
+        _ => "–",
+    };
+
+    private string Label => Status switch
+    {
+        "InProgress" => "In progress",
+        "PartiallyDeadLettered" => "Partly dead-lettered",
+        "DeadLettered" => "Dead-lettered",
+        "LeaseExpired" => "Lease expired",
+        "HalfOpen" => "Half-open",
+        "Open" => "Circuit open",
+        "Closed" => "Circuit closed",
+        _ => Status,
+    };
+}
