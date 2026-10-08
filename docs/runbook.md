@@ -15,10 +15,11 @@ $h = @{ Authorization = "ApiKey $adminKey" } # an Admin application's key
 
 | Part | Where | State |
 |---|---|---|
-| API (`/api/v1`), hub (`/hubs/deliveries`), health (`/health/*`) | Broker host (`MessageBroker.Api`) | None |
+| API (`/api/v1`), hubs (`/hubs/deliveries`, `/hubs/admin`), health (`/health/*`) | Broker host (`MessageBroker.Api`) | In memory: the admin activity feed (connected dashboards, queued events) |
 | Dispatcher: lease loop, webhook and SignalR senders, maintenance (every 5 s), retention (hourly) | Same host, when `Broker:Dispatcher:Enabled` is true (default) | In memory: circuit breakers, SignalR connections, publish signal |
 | Messages, deliveries, attempts, DLQ, applications, keys, permissions, allowlist, heartbeat | SQL Server, `broker` schema | Durable |
 | Data Protection key ring (encrypts webhook secrets) | `Broker:DataProtection:KeysDirectory` | Durable — **back it up** |
+| Admin dashboard (section 9) | Its own host (`MessageBroker.Dashboard`), talking to the broker over REST and `/hubs/admin` | Sign-in cookies, encrypted with its own key ring (`Dashboard:DataProtectionKeysDirectory`) |
 
 Phase 1 supports **one broker instance**. The in-memory state above is not shared, so do not run two instances against one database.
 
@@ -215,7 +216,13 @@ Invoke-RestMethod -Method Post "$broker/api/v1/deadletters/$deliveryId/requeue" 
 | `RejectedBySubscriber` | The subscriber NACKed with `deadLetter` | The message is invalid for that subscriber; requeue only when its code has changed. |
 | `Expired` | TTL passed before delivery | Usually leave it. A requeue clears the delivery's expiry, so the stale message is delivered. |
 
-A requeued delivery gets a fresh retry budget. Its attempt history keeps counting (`GET /api/v1/messages/{id}` shows every attempt). Requeueing something that is not in the DLQ returns 409. There is no bulk requeue in Phase 1: loop over the page, and requeue slowly enough that the subscriber can keep up.
+A requeued delivery gets a fresh retry budget. Its attempt history keeps counting (`GET /api/v1/messages/{id}` shows every attempt). Requeueing something that is not in the DLQ returns 409. The API has no bulk requeue: loop over the page, and requeue slowly enough that the subscriber can keep up. The dashboard's **Dead letters** page (section 9) does that loop for up to 200 selected entries and reports each failure.
+
+Across every subscription at once (Admin), with optional `topicId`, `subscriptionId`, `reason`, `from`, `to` (UTC) and `includeRequeued`:
+```powershell
+Invoke-RestMethod "$broker/api/v1/admin/deadletters?reason=MaxAttemptsExceeded&pageSize=100" -Headers $h
+```
+That listing leaves payloads out (`payload` is `null`); read the message for it.
 
 ### 5.5 Trace a message
 ```powershell
@@ -223,6 +230,12 @@ Invoke-RestMethod "$broker/api/v1/messages/$messageId" -Headers $h              
 Invoke-RestMethod "$broker/api/v1/messages?correlationId=$corr" -Headers $h          # every message in the flow (Admin)
 ```
 Message status is `InProgress`, `Completed`, `PartiallyDeadLettered` or `DeadLettered`. Deliveries cancelled because their subscription was deleted are ignored in that status.
+
+To find messages without knowing their ID (Admin), search newest first with any of `topicId`, `status`, `messageType`, `correlationId`, `publisherAppId`, `from` and `to` (UTC); pass `nextCursor` back as `cursor` for the next page:
+```powershell
+Invoke-RestMethod "$broker/api/v1/admin/messages?status=DeadLettered&pageSize=50" -Headers $h
+Invoke-RestMethod "$broker/api/v1/admin/overview?windowMinutes=60" -Headers $h      # totals, per-minute throughput, subscription health
+```
 
 ### 5.6 Webhook allowlist
 `GET`, `POST` and `DELETE /api/v1/admin/webhook-hosts[/{host}]`. Removing a host does not stop existing subscriptions that use it; pause or delete them as well.
@@ -283,6 +296,8 @@ dotnet run --project samples/SamplePublisher -- --Generator:Count 14 --Generator
 
 `setup` writes `samples/samples.local.json`, which holds API keys and a webhook secret: keep it out of source control. With these settings, each subscriber completes 10 payments and dead-letters 4. Two are `FAIL-` payments that fail 3 attempts (`MaxAttemptsExceeded`), and two are invalid payments the subscribers reject (`RejectedBySubscriber`). Use 5.4 and 5.5 to requeue one and trace it. A requeued `FAIL-` payment fails again and shows attempts 4–6 in its history.
 
+**Admin dashboard.** `dotnet run --project src/MessageBroker.Dashboard` serves http://localhost:5090. Sign in with the bootstrap admin key; section 9 describes it.
+
 **Blazor samples.** `setup` also onboards two Blazor Server apps on a `notifications` topic:
 ```powershell
 dotnet run --project samples/BlazorSubscriber         # http://localhost:5083 — keep it open in a browser
@@ -299,3 +314,41 @@ dotnet run -c Release --project tests/MessageBroker.LoadTests -- --DurationSecon
 dotnet run -c Release --project tests/MessageBroker.LoadTests -- --BrokerUrl https://broker.internal --AdminKey <admin key>
 ```
 Self-hosted, it creates a throwaway `BrokerDb_Load_*` database (dropped afterwards) and runs the broker on a free local port. Against a deployed broker, it onboards its own `load-*` topic, applications and pull subscription; delete them afterwards (5.7). Other options are `--Rate` (default 100), `--P95Ms` (100), `--DeliveryP95Ms` (1000) and `--ReportFolder` (`artifacts/load-report`). The exit code is 1 when a threshold is missed. NBomber 6 is free for personal use only; an organization needs an NBomber licence. Results so far are in `docs/acceptance.md`.
+
+---
+
+## 9. Admin dashboard
+
+`src/MessageBroker.Dashboard` is a Blazor Server app for watching the broker. It is read-only except for one action: requeueing dead letters. It is a separate host and reaches the broker only through the REST API and the admin hub (`/hubs/admin`), with the signed-in operator's own key, so it can run anywhere that reaches the broker.
+
+| Page | Shows |
+|---|---|
+| Overview | Pending, leased and dead-lettered deliveries; published and completed in the chosen window (15 min to 24 h); a per-minute chart of published, completed, failed attempts and dead-lettered (with a table view); each subscription's backlog, webhook circuit state and connected SignalR clients; dispatcher heartbeat age |
+| Messages | Every message, newest first, filtered by topic, status, type, correlation ID, publisher and time; the detail page shows the payload, properties, every delivery and its attempt history, and other messages with the same correlation ID |
+| Dead letters | The DLQ across every subscription, with filters; requeue one entry or up to 200 selected (asks first, then reports each failure) |
+| Topology | Topics with their subscriptions and settings (webhook host only, never the path or secret) and applications with their permissions |
+
+**Live updates.** The dashboard holds one admin-hub connection per open browser tab. The broker sends a batch of message activity every 250 ms and an "overview changed" signal at most once a second, and pages re-read what they show (at most once a second). The badge at the bottom left shows the state: **Live**, **Reconnecting · polling** or **Offline · polling**. When it is not live, pages refresh every `FallbackPollSeconds` until the hub is back. The feed is per broker process [Fix 11], like the other in-memory state.
+
+### 9.1 Deploy
+Run it like the broker (2.5): `MessageBroker.Dashboard.exe` as a service, behind TLS. Settings (`Dashboard` section or `Dashboard__*` environment variables):
+
+| Setting | Default | Notes |
+|---|---|---|
+| `Dashboard:BrokerUrl` | `http://localhost:5080/` | The broker's base address. |
+| `Dashboard:DataProtectionKeysDirectory` | — | **Set it in production.** The key ring encrypts sign-in cookies. Without it, a restart can sign everyone out. Use a different directory from the broker's. |
+| `Dashboard:SessionHours` | 8 | Sliding sign-in lifetime. |
+| `Dashboard:FallbackPollSeconds` | 10 | Refresh interval while the live feed is down. |
+| `Dashboard:RefreshThrottleMs` | 1000 | Pages re-read at most this often. |
+
+### 9.2 Access
+Operators sign in with an **Admin** API key: issue each operator a named Admin application and key (4.1, `"isAdmin": true`) rather than sharing the bootstrap key. The dashboard checks the key with the broker. It keeps the key only inside its sign-in cookie, which is encrypted, HttpOnly and SameSite=Strict, so the browser never sees the key in readable form. Every broker call is made with that operator's key, and the broker's log shows it as the caller. Deactivating the key (5.1) locks the operator out at their next request. **Sign out** clears the cookie. Put the dashboard on an internal network or behind your SSO proxy as well: anyone holding an Admin key can do more than the dashboard shows.
+
+### 9.3 Troubleshooting
+| Symptom | Check |
+|---|---|
+| "The broker did not accept that key" at sign-in | The key is wrong, expired or deactivated. |
+| "That key is valid, but its application is not an Admin" | Use an Admin application's key. |
+| Badge stays on **Reconnecting · polling** or **Offline · polling** | The dashboard cannot open `/hubs/admin`. Check `Dashboard:BrokerUrl`, and that any proxy between them passes WebSockets (or long polling). Pages still refresh on the fallback timer. |
+| A subscription shows **Circuit open** | Its webhook endpoint is failing (section 7); waiting deliveries keep their attempts. |
+| Everyone signed out after a restart | Set `Dashboard:DataProtectionKeysDirectory`. |
