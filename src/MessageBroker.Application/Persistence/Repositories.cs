@@ -89,13 +89,23 @@ public interface IMessageRepository
 public interface IDeliveryRepository
 {
     Task<IReadOnlyList<LeasedDeliveryRecord>> LeaseAsync(Guid subscriptionId, int maxMessages, string channel, Guid? appId, CancellationToken ct = default); // usp_Delivery_Lease
-    Task AckAsync(long deliveryId, Guid lockToken, Guid? appId, int? httpStatusCode = null, CancellationToken ct = default); // usp_Delivery_Ack
+    /// <returns>The delivery's message ID.</returns>
+    Task<Guid> AckAsync(long deliveryId, Guid lockToken, Guid? appId, int? httpStatusCode = null, CancellationToken ct = default); // usp_Delivery_Ack
     Task<NackRecord> NackAsync(long deliveryId, Guid lockToken, Guid? appId, FailureDetails failure, CancellationToken ct = default); // usp_Delivery_Nack
     Task<DateTime> RenewAsync(long deliveryId, Guid lockToken, Guid? appId, CancellationToken ct = default);  // usp_Delivery_Renew
     Task<int> ExpireLeasesAsync(int maxRows = 500, CancellationToken ct = default);                           // usp_Delivery_ExpireLeases
     Task<int> ExpirePendingAsync(int maxRows = 1000, CancellationToken ct = default);                         // usp_Delivery_ExpirePending
-    Task RequeueAsync(long deliveryId, Guid requeuedBy, CancellationToken ct = default);                      // usp_DeadLetter_Requeue
+    /// <returns>The delivery's message ID.</returns>
+    Task<Guid> RequeueAsync(long deliveryId, Guid requeuedBy, CancellationToken ct = default);                // usp_DeadLetter_Requeue
     Task<IReadOnlyList<DeadLetterRecord>> ListDeadLettersAsync(Guid subscriptionId, Guid? appId, int pageSize, long? beforeId, bool includeRequeued, CancellationToken ct = default); // usp_DeadLetter_List
+}
+
+/// <summary>Admin dashboard queries (Dashboard.sql).</summary>
+public interface IDashboardRepository
+{
+    Task<OverviewRecord> GetOverviewAsync(int windowMinutes, CancellationToken ct = default);                                 // usp_Admin_GetOverview
+    Task<IReadOnlyList<MessageSearchRecord>> SearchMessagesAsync(MessageSearchQuery query, CancellationToken ct = default);   // usp_Admin_Message_Search
+    Task<IReadOnlyList<DeadLetterRecord>> SearchDeadLettersAsync(DeadLetterSearchQuery query, CancellationToken ct = default); // usp_Admin_DeadLetter_Search
 }
 
 public interface IOperationsRepository

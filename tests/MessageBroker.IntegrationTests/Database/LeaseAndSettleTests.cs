@@ -240,7 +240,7 @@ public class LeaseAndSettleTests(SqlServerFixture sql) : DatabaseTest(sql)
         Assert.Equal(count, round1.Count);
         await Task.WhenAll(round1.Select((d, i) => (i % 3) switch
         {
-            0 => Deliveries.AckAsync(d.DeliveryId, d.LockToken, subscriber),
+            0 => (Task)Deliveries.AckAsync(d.DeliveryId, d.LockToken, subscriber),
             1 => Deliveries.NackAsync(d.DeliveryId, d.LockToken, subscriber, new FailureDetails("E1", "retry")),
             _ => Deliveries.NackAsync(d.DeliveryId, d.LockToken, subscriber, new FailureDetails("E2", "reject", DeadLetter: true)),
         }));
