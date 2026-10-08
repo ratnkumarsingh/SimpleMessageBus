@@ -143,8 +143,8 @@ public sealed class DeliveryRepository(Db db) : IDeliveryRepository
         db.QueryAsync<LeasedDeliveryRecord>("usp_Delivery_Lease",
             new { SubscriptionId = subscriptionId, MaxMessages = maxMessages, Channel = channel, AppId = appId }, ct);
 
-    public Task AckAsync(long deliveryId, Guid lockToken, Guid? appId, int? httpStatusCode = null, CancellationToken ct = default) =>
-        db.ExecuteAsync("usp_Delivery_Ack",
+    public Task<Guid> AckAsync(long deliveryId, Guid lockToken, Guid? appId, int? httpStatusCode = null, CancellationToken ct = default) =>
+        db.QuerySingleAsync<Guid>("usp_Delivery_Ack",
             new { DeliveryId = deliveryId, LockToken = lockToken, AppId = appId, HttpStatusCode = httpStatusCode }, ct);
 
     public Task<NackRecord> NackAsync(long deliveryId, Guid lockToken, Guid? appId, FailureDetails f, CancellationToken ct = default) =>
@@ -169,8 +169,8 @@ public sealed class DeliveryRepository(Db db) : IDeliveryRepository
     public Task<int> ExpirePendingAsync(int maxRows = 1000, CancellationToken ct = default) =>
         db.QuerySingleAsync<int>("usp_Delivery_ExpirePending", new { MaxRows = maxRows }, ct);
 
-    public Task RequeueAsync(long deliveryId, Guid requeuedBy, CancellationToken ct = default) =>
-        db.ExecuteAsync("usp_DeadLetter_Requeue", new { DeliveryId = deliveryId, RequeuedBy = requeuedBy }, ct);
+    public Task<Guid> RequeueAsync(long deliveryId, Guid requeuedBy, CancellationToken ct = default) =>
+        db.QuerySingleAsync<Guid>("usp_DeadLetter_Requeue", new { DeliveryId = deliveryId, RequeuedBy = requeuedBy }, ct);
 
     public Task<IReadOnlyList<DeadLetterRecord>> ListDeadLettersAsync(Guid subscriptionId, Guid? appId, int pageSize, long? beforeId, bool includeRequeued, CancellationToken ct = default) =>
         db.QueryAsync<DeadLetterRecord>("usp_DeadLetter_List", new
@@ -183,6 +183,25 @@ public sealed class DeliveryRepository(Db db) : IDeliveryRepository
         }, ct);
 
     private static string? Truncate(string? value, int max) => value is { Length: > 0 } && value.Length > max ? value[..max] : value;
+}
+
+public sealed class DashboardRepository(Db db) : IDashboardRepository
+{
+    public Task<OverviewRecord> GetOverviewAsync(int windowMinutes, CancellationToken ct = default) =>
+        db.QueryMultipleAsync("usp_Admin_GetOverview", new { WindowMinutes = windowMinutes }, async grid =>
+        {
+            var totals = await grid.ReadSingleAsync<OverviewTotalsRecord>();
+            var series = (await grid.ReadAsync<ThroughputRecord>()).AsList();
+            var subscriptions = (await grid.ReadAsync<SubscriptionHealthRecord>()).AsList();
+            var heartbeat = await grid.ReadSingleAsync<HeartbeatRecord>();
+            return new OverviewRecord(totals, series, subscriptions, heartbeat);
+        }, ct);
+
+    public Task<IReadOnlyList<MessageSearchRecord>> SearchMessagesAsync(MessageSearchQuery query, CancellationToken ct = default) =>
+        db.QueryAsync<MessageSearchRecord>("usp_Admin_Message_Search", query, ct);
+
+    public Task<IReadOnlyList<DeadLetterRecord>> SearchDeadLettersAsync(DeadLetterSearchQuery query, CancellationToken ct = default) =>
+        db.QueryAsync<DeadLetterRecord>("usp_Admin_DeadLetter_Search", query, ct);
 }
 
 public sealed class OperationsRepository(Db db) : IOperationsRepository

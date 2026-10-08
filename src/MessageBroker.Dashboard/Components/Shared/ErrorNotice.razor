@@ -1,0 +1,30 @@
+@if (Error is not null)
+{
+    <div class="notice error" role="alert">
+        <strong>@Title</strong> @Error
+        @if (Retry.HasDelegate)
+        {
+            <button type="button" class="link" @onclick="Retry">Try again</button>
+        }
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string? Error { get; set; }
+
+    [Parameter]
+    public string Title { get; set; } = "Could not load from the broker.";
+
+    [Parameter]
+    public EventCallback Retry { get; set; }
+
+    /// <summary>A short message for a failed broker call; never the response body.</summary>
+    public static string Describe(Exception ex) => ex switch
+    {
+        MessageBroker.Contracts.Client.BrokerApiException api => $"{(int)api.StatusCode} {api.Title ?? api.Message}",
+        HttpRequestException => "The broker is unreachable.",
+        TaskCanceledException => "The broker did not answer in time.",
+        _ => ex.Message,
+    };
+}

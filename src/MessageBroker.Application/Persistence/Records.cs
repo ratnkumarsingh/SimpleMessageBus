@@ -136,6 +136,7 @@ public sealed record NackRecord
 {
     public bool DeadLettered { get; init; }
     public DateTime? NextAvailableAt { get; init; }
+    public Guid MessageId { get; init; }
 }
 
 public sealed record FailureDetails(
@@ -246,3 +247,89 @@ public sealed record PurgeRecord
     public int DeliveriesDeleted { get; init; }
     public int MessagesDeleted { get; init; }
 }
+
+// ---- admin dashboard (Dashboard.sql) ----
+
+public sealed record OverviewTotalsRecord
+{
+    public long PendingCount { get; init; }
+    public long LeasedCount { get; init; }
+    public long DeadLetteredCount { get; init; }
+    public long PublishedInWindow { get; init; }
+    public long CompletedInWindow { get; init; }
+    public int WindowMinutes { get; init; }
+    public DateTime GeneratedAt { get; init; }
+}
+
+/// <summary>One minute of the throughput series.</summary>
+public sealed record ThroughputRecord
+{
+    public DateTime Minute { get; init; }
+    public int Published { get; init; }
+    public int Completed { get; init; }
+    public int Failed { get; init; }
+    public int DeadLettered { get; init; }
+}
+
+/// <summary>A subscription with its backlog; deliberately without the webhook URL or secrets.</summary>
+public sealed record SubscriptionHealthRecord
+{
+    public Guid SubscriptionId { get; init; }
+    public string Name { get; init; } = "";
+    public Guid TopicId { get; init; }
+    public string TopicName { get; init; } = "";
+    public Guid OwnerAppId { get; init; }
+    public string Status { get; init; } = "";
+    public string DeliveryMode { get; init; } = "";
+    public int PendingCount { get; init; }
+    public int LeasedCount { get; init; }
+    public int DeadLetteredCount { get; init; }
+}
+
+public sealed record OverviewRecord(
+    OverviewTotalsRecord Totals,
+    IReadOnlyList<ThroughputRecord> Series,
+    IReadOnlyList<SubscriptionHealthRecord> Subscriptions,
+    HeartbeatRecord Heartbeat);
+
+/// <summary>Parameters of usp_Admin_Message_Search; null means "any".</summary>
+public sealed record MessageSearchQuery(
+    Guid? TopicId = null,
+    string? Status = null,
+    string? MessageType = null,
+    string? CorrelationId = null,
+    Guid? PublisherAppId = null,
+    DateTime? From = null,
+    DateTime? To = null,
+    long? BeforeSeq = null,
+    int PageSize = 50);
+
+public sealed record MessageSearchRecord
+{
+    public long MessageSeq { get; init; }
+    public Guid MessageId { get; init; }
+    public string TopicName { get; init; } = "";
+    public string MessageType { get; init; } = "";
+    public string CorrelationId { get; init; } = "";
+    public Guid PublisherAppId { get; init; }
+    public string PublisherName { get; init; } = "";
+    public DateTime CreatedAt { get; init; }
+    public DateTime? ExpiresAt { get; init; }
+    public string Status { get; init; } = "";
+    public int DeliveryCount { get; init; }
+    public int PendingCount { get; init; }
+    public int LeasedCount { get; init; }
+    public int CompletedCount { get; init; }
+    public int DeadLetteredCount { get; init; }
+}
+
+/// <summary>Parameters of usp_Admin_DeadLetter_Search; null means "any".</summary>
+public sealed record DeadLetterSearchQuery(
+    Guid? TopicId = null,
+    Guid? SubscriptionId = null,
+    string? Reason = null,
+    DateTime? From = null,
+    DateTime? To = null,
+    bool IncludeRequeued = false,
+    long? BeforeId = null,
+    int PageSize = 50);

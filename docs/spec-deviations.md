@@ -70,3 +70,14 @@ The specification is `Internal_Message_Broker_Phase1_Architecture.pdf` (v1.0). T
 | Delivery to one client | Each delivery goes to exactly one connection of the subscription, round-robin in join order, never to a group. With no connection, nothing is leased. | Spec section 8.3. |
 | `MaxConcurrentDeliveries` | Counts deliveries sent over SignalR and not yet settled (ACK, NACK, or lease end). A renewal keeps the delivery counted. | A client cannot be flooded with more unsettled work than the limit. |
 | Connection registry | In memory **[Fix 11]**. After a broker restart, clients reconnect and Subscribe again; the Contracts `SignalRDeliveryListener` does this automatically, retrying forever (0, 2, 5, 10, then every 30 s). Deliveries held by a client that disconnects are retried after their lease expires. | Single-instance state, to be replaced with a backplane in Phase 3. |
+
+## Additions: admin dashboard
+
+Not in the Phase 1 specification; added on request to watch the broker.
+
+| Addition | Build | Reason |
+|---|---|---|
+| Dashboard read endpoints (Admin) | `GET /api/v1/admin/overview` (totals, per-minute throughput over 5–1440 minutes, subscription health with circuit state and connected clients), `GET /api/v1/admin/messages` (filtered keyset search) and `GET /api/v1/admin/deadletters` (DLQ across every subscription, without payloads). Backed by `usp_Admin_GetOverview`, `usp_Admin_Message_Search` and `usp_Admin_DeadLetter_Search`, with indexes in migration `0003_DashboardIndexes`. | The traceability API answers "what happened to this message"; operators also need "what is happening now" without SQL access. |
+| Admin hub `/hubs/admin` | Admin keys only (403 at negotiate otherwise). Sends `Activity` batches (`Published`, `DeliveryChanged`) every 250 ms and `OverviewChanged` at most once a second; nothing is queued while no dashboard is connected. In memory **[Fix 11]**. | Live updates without every dashboard polling the database. |
+| Settle procedures return the message ID | `usp_Delivery_Ack` and `usp_DeadLetter_Requeue` return `MessageId`; `usp_Delivery_Nack` adds it to its result. | Lets the activity feed name the message a settlement belongs to. |
+| `MessageBroker.Dashboard` | A separate Blazor Server host; read-only except DLQ requeue; sign-in with an Admin key kept in an encrypted cookie. | Keeps UI out of the broker process and gives operators a view without SQL access. |

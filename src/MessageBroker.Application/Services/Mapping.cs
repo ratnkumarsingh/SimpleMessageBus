@@ -141,8 +141,11 @@ public static class Mapping
         CorrelationId = d.CorrelationId,
         MessageCreatedAt = d.MessageCreatedAt,
         Properties = d.Properties is null ? null : ParseJson(d.Properties),
-        Payload = ParseJson(d.Payload),
+        // The broker-wide DLQ search leaves the payload out; it is JSON null there.
+        Payload = d.Payload.Length == 0 ? NullJson : ParseJson(d.Payload),
     };
+
+    private static readonly JsonElement NullJson = ParseJson("null");
 
     private static JsonElement ParseJson(string json)
     {

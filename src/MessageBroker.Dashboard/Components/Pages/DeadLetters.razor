@@ -1,0 +1,349 @@
+@page "/deadletters"
+@implements IDisposable
+@inject IBrokerAdminClient Broker
+@inject ILiveFeed Live
+@inject NavigationManager Navigation
+@inject TimeProvider Time
+@inject Microsoft.Extensions.Options.IOptions<DashboardOptions> Options
+
+<PageTitle>Dead letters · Broker Dashboard</PageTitle>
+
+<header class="page-head">
+    <div>
+        <h1>Dead letters</h1>
+        <div class="sub">Every subscription, newest first · times in UTC</div>
+    </div>
+</header>
+
+<form class="filter-bar" @onsubmit="Apply" aria-label="Dead letter filters">
+    <div class="field">
+        <label for="d-topic">Topic</label>
+        <select id="d-topic" @bind="_form.TopicId">
+            <option value="">Any topic</option>
+            @foreach (var t in _topics)
+            {
+                <option value="@t.TopicId">@t.Name</option>
+            }
+        </select>
+    </div>
+    <div class="field">
+        <label for="d-sub">Subscription</label>
+        <select id="d-sub" @bind="_form.SubscriptionId">
+            <option value="">Any subscription</option>
+            @foreach (var s in _subscriptions)
+            {
+                <option value="@s.SubscriptionId">@s.TopicName / @s.Name</option>
+            }
+        </select>
+    </div>
+    <div class="field">
+        <label for="d-reason">Reason</label>
+        <select id="d-reason" @bind="_form.Reason">
+            <option value="">Any reason</option>
+            <option value="MaxAttemptsExceeded">Attempts exhausted</option>
+            <option value="RejectedBySubscriber">Rejected by subscriber</option>
+            <option value="Expired">Expired</option>
+        </select>
+    </div>
+    <div class="field">
+        <label for="d-from">From (UTC)</label>
+        <input id="d-from" type="datetime-local" @bind="_form.From" />
+    </div>
+    <div class="field">
+        <label for="d-to">To (UTC)</label>
+        <input id="d-to" type="datetime-local" @bind="_form.To" />
+    </div>
+    <div class="field check">
+        <input id="d-requeued" type="checkbox" @bind="_form.IncludeRequeued" />
+        <label for="d-requeued">Include requeued</label>
+    </div>
+    <div class="actions">
+        <button type="submit" class="primary">Apply</button>
+        <button type="button" class="secondary" @onclick="Clear">Clear</button>
+    </div>
+</form>
+
+<ErrorNotice Error="@_error" Retry="ReloadAsync" />
+
+@if (_outcome is not null)
+{
+    <div class="notice @(_failures.Count == 0 ? "good" : "error")" role="status">
+        <strong>@_outcome</strong>
+        @if (_failures.Count > 0)
+        {
+            <ul>
+                @foreach (var (id, reason) in _failures)
+                {
+                    <li>Delivery @id: @reason</li>
+                }
+            </ul>
+        }
+        <button type="button" class="link" @onclick="() => { _outcome = null; _failures.Clear(); }">Dismiss</button>
+    </div>
+}
+
+<section class="card @(_loading ? "refreshing" : "")">
+    @* Always present, so selecting a row never moves the rows below. *@
+    <div class="toolbar">
+        @if (_confirming is { Count: > 0 } pending)
+        {
+            <div class="confirm" role="alertdialog" aria-label="Confirm requeue">
+                <span>Requeue @pending.Count @(pending.Count == 1 ? "delivery" : "deliveries")? Each returns to Pending with a fresh attempt budget and is delivered again.</span>
+                <button type="button" class="primary" @onclick="RequeueAsync" disabled="@_working">@(_working ? "Requeuing…" : "Requeue")</button>
+                <button type="button" class="secondary" @onclick="() => _confirming = null" disabled="@_working">Cancel</button>
+            </div>
+        }
+        else
+        {
+            <span class="muted" role="status">@(_selected.Count == 0 ? "Select dead letters to requeue them together" : $"{_selected.Count} selected")</span>
+            <button type="button" class="primary" disabled="@(_selected.Count == 0)" @onclick="() => Confirm(_selected.ToList())">Requeue selected</button>
+            @if (_selected.Count > 0)
+            {
+                <button type="button" class="link" @onclick="() => _selected.Clear()">Clear selection</button>
+            }
+        }
+    </div>
+    @if (_rows.Count == 0 && !_loading && _error is null)
+    {
+        <p class="muted">No dead letters match. Nice.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="data">
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" aria-label="Select all open dead letters" checked="@AllSelected" @onchange="ToggleAll" /></th>
+                        <th>Dead-lettered</th><th>Message</th><th>Topic / subscription</th><th>Reason</th>
+                        <th class="num">Attempts</th><th>Last error</th><th>First failure</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var d in _rows)
+                    {
+                        var open = d.RequeuedAt is null;
+                        <tr @key="d.DeadLetterId">
+                            <td>
+                                @if (open)
+                                {
+                                    <input type="checkbox" aria-label="@($"Select delivery {d.DeliveryId}")" checked="@_selected.Contains(d.DeliveryId)"
+                                           @onchange="e => Toggle(d.DeliveryId, (bool)e.Value!)" />
+                                }
+                            </td>
+                            <td>@Format.Utc(d.DeadLetteredAt)</td>
+                            <td class="mono"><a href="@($"messages/{d.MessageId}")">@Format.Short(d.MessageId)</a><div class="muted">@d.MessageType</div></td>
+                            <td>@d.TopicName / @d.SubscriptionName</td>
+                            <td>@ReasonText(d.Reason)</td>
+                            <td class="num">@d.AttemptCount</td>
+                            <td class="wrap">@d.LastError</td>
+                            <td>@Format.Utc(d.FirstFailureAt)</td>
+                            <td>
+                                @if (open)
+                                {
+                                    <button type="button" class="link" @onclick="() => Confirm([d.DeliveryId])">Requeue</button>
+                                }
+                                else
+                                {
+                                    <span class="muted" title="@Format.Utc(d.RequeuedAt)">requeued</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (_nextBefore is not null)
+        {
+            <div class="more"><button type="button" class="secondary" @onclick="LoadMoreAsync" disabled="@_loading">Load more</button></div>
+        }
+    }
+</section>
+
+@code {
+    public const int PageSize = 50;
+    public const int MaxSelection = 200;
+
+    [SupplyParameterFromQuery(Name = "topicId")] public Guid? TopicId { get; set; }
+    [SupplyParameterFromQuery(Name = "subscriptionId")] public Guid? SubscriptionId { get; set; }
+    [SupplyParameterFromQuery(Name = "reason")] public string? Reason { get; set; }
+    [SupplyParameterFromQuery(Name = "from")] public string? From { get; set; }
+    [SupplyParameterFromQuery(Name = "to")] public string? To { get; set; }
+    [SupplyParameterFromQuery(Name = "includeRequeued")] public bool IncludeRequeued { get; set; }
+
+    private sealed class FilterForm
+    {
+        public string TopicId { get; set; } = "";
+        public string SubscriptionId { get; set; } = "";
+        public string Reason { get; set; } = "";
+        public DateTime? From { get; set; }
+        public DateTime? To { get; set; }
+        public bool IncludeRequeued { get; set; }
+    }
+
+    private readonly FilterForm _form = new();
+    private readonly List<DeadLetterResponse> _rows = [];
+    private readonly HashSet<long> _selected = [];
+    private readonly List<(long DeliveryId, string Reason)> _failures = [];
+    private IReadOnlyList<TopicResponse> _topics = [];
+    private IReadOnlyList<SubscriptionHealth> _subscriptions = [];
+    private DeadLetterSearchRequest _query = new();
+    private List<long>? _confirming;
+    private long? _nextBefore;
+    private bool _loading;
+    private bool _working;
+    private string? _error;
+    private string? _outcome;
+    private RefreshThrottle? _throttle;
+
+    private IEnumerable<long> OpenIds => _rows.Where(r => r.RequeuedAt is null).Select(r => r.DeliveryId);
+    private bool AllSelected => _selected.Count > 0 && OpenIds.All(_selected.Contains);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _throttle = new RefreshThrottle(TimeSpan.FromMilliseconds(Options.Value.RefreshThrottleMs), Time);
+        Live.OverviewChanged += OnOverviewChanged;
+        try
+        {
+            _topics = await Broker.ListTopicsAsync();
+            _subscriptions = (await Broker.GetOverviewAsync(DashboardDefaults.MinWindowMinutes)).Subscriptions;
+        }
+        catch (Exception ex)
+        {
+            _error = ErrorNotice.Describe(ex);
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _form.TopicId = TopicId?.ToString() ?? "";
+        _form.SubscriptionId = SubscriptionId?.ToString() ?? "";
+        _form.Reason = Reason ?? "";
+        _form.From = Format.ParseUtc(From);
+        _form.To = Format.ParseUtc(To);
+        _form.IncludeRequeued = IncludeRequeued;
+        _query = new DeadLetterSearchRequest
+        {
+            TopicId = TopicId,
+            SubscriptionId = SubscriptionId,
+            Reason = string.IsNullOrWhiteSpace(Reason) ? null : Reason,
+            From = _form.From,
+            To = _form.To,
+            IncludeRequeued = IncludeRequeued,
+            PageSize = PageSize,
+        };
+        _selected.Clear();
+        await ReloadAsync();
+    }
+
+    private void Apply() => Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(new Dictionary<string, object?>
+    {
+        ["topicId"] = Guid.TryParse(_form.TopicId, out var topic) ? topic : null,
+        ["subscriptionId"] = Guid.TryParse(_form.SubscriptionId, out var sub) ? sub : null,
+        ["reason"] = string.IsNullOrEmpty(_form.Reason) ? null : _form.Reason,
+        ["from"] = Format.InputUtc(_form.From),
+        ["to"] = Format.InputUtc(_form.To),
+        ["includeRequeued"] = _form.IncludeRequeued ? true : null,
+    }));
+
+    private void Clear() => Navigation.NavigateTo("deadletters");
+
+    private Task ReloadAsync() => LoadAsync(before: null);
+
+    private Task LoadMoreAsync() => LoadAsync(_nextBefore);
+
+    private async Task LoadAsync(long? before)
+    {
+        _loading = true;
+        try
+        {
+            var page = await Broker.SearchDeadLettersAsync(_query with { Before = before });
+            if (before is null)
+                _rows.Clear();
+            _rows.AddRange(page.Items);
+            _nextBefore = page.NextBefore;
+            _selected.IntersectWith(OpenIds); // rows that left the list cannot stay selected
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            _error = ErrorNotice.Describe(ex);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    // While the operator is deciding or requeuing, the list holds still.
+    private void OnOverviewChanged()
+    {
+        if (_confirming is null && !_working)
+            _throttle?.Request(() => InvokeAsync(async () => { await ReloadAsync(); StateHasChanged(); }));
+    }
+
+    private void Toggle(long deliveryId, bool selected)
+    {
+        if (!selected)
+            _selected.Remove(deliveryId);
+        else if (_selected.Count < MaxSelection)
+            _selected.Add(deliveryId);
+    }
+
+    private void ToggleAll(ChangeEventArgs e)
+    {
+        if (e.Value is true)
+            foreach (var id in OpenIds.Take(MaxSelection - _selected.Count))
+                _selected.Add(id);
+        else
+            _selected.Clear();
+    }
+
+    private void Confirm(List<long> deliveryIds)
+    {
+        _outcome = null;
+        _failures.Clear();
+        _confirming = deliveryIds.Take(MaxSelection).ToList();
+    }
+
+    /// <summary>One call per delivery, so each failure is reported against its row; the rest still go through.</summary>
+    private async Task RequeueAsync()
+    {
+        if (_confirming is not { Count: > 0 } ids)
+            return;
+        _working = true;
+        var done = 0;
+        foreach (var id in ids)
+        {
+            try
+            {
+                await Broker.RequeueDeadLetterAsync(id);
+                done++;
+                _selected.Remove(id);
+            }
+            catch (Exception ex)
+            {
+                _failures.Add((id, ErrorNotice.Describe(ex)));
+            }
+        }
+        _working = false;
+        _confirming = null;
+        _outcome = _failures.Count == 0
+            ? $"Requeued {done} {(done == 1 ? "delivery" : "deliveries")}."
+            : $"Requeued {done} of {ids.Count}; {_failures.Count} failed.";
+        await ReloadAsync();
+    }
+
+    private static string ReasonText(string reason) => reason switch
+    {
+        "MaxAttemptsExceeded" => "Attempts exhausted",
+        "RejectedBySubscriber" => "Rejected by subscriber",
+        "Expired" => "Expired (TTL)",
+        _ => reason,
+    };
+
+    public void Dispose()
+    {
+        Live.OverviewChanged -= OnOverviewChanged;
+        _throttle?.Dispose();
+    }
+}

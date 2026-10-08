@@ -101,9 +101,9 @@ public sealed class ConcurrencyTests(SqlServerFixture sql, ITestOutputHelper out
         using var stop = new CancellationTokenSource(TimeSpan.FromMinutes(3));
         var options = Options.Create(new BrokerOptions { Dispatcher = { PollIntervalMs = 50 } });
         var dispatchers = Enumerable.Range(1, 2).Select(i => new LeaseLoop(Subscriptions, Deliveries,
-            [new SettlingChannel(Deliveries, ledger, $"dispatcher-{i}")], new DispatcherSignal(), options,
-            TimeProvider.System, NullLogger<LeaseLoop>.Instance)).ToList();
-        var maintenance = new MaintenanceLoop(Deliveries, Operations, options, TimeProvider.System, NullLogger<MaintenanceLoop>.Instance);
+            [new SettlingChannel(Deliveries, ledger, $"dispatcher-{i}")], new DispatcherSignal(), new NullBrokerActivityFeed(),
+            options, TimeProvider.System, NullLogger<LeaseLoop>.Instance)).ToList();
+        var maintenance = new MaintenanceLoop(Deliveries, Operations, new NullBrokerActivityFeed(), options, TimeProvider.System, NullLogger<MaintenanceLoop>.Instance);
 
         clock.Restart();
         foreach (var dispatcher in dispatchers)

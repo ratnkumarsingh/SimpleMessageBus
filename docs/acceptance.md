@@ -76,6 +76,7 @@ The restart tests stop the host in-process instead of killing an OS process. Wha
 |---|---|---|---|---|---|---|
 | 2-minute smoke, 2026-10-08 | 120 s | 12,000 | 0 | 100.0 msg/s | 3.1 / 16.8 / 18.3 ms | 46.2 ms (max 94.6 ms) |
 | 30-minute report, 2026-10-08 | 1,800 s | 180,000 | 0 | 100.0 msg/s | 2.9 / 16.6 / 18.6 ms | 34.2 ms (max 259.9 ms) |
+| 2-minute smoke with the admin activity feed, 2026-10-08 | 120 s | 12,000 | 0 | 100.0 msg/s | 3.1 / 18.1 / 24.5 ms | 40.9 ms (max 76.2 ms) |
 
 Measured on one developer workstation (Windows 10, local SQL Server 2022 default instance), with the broker, SQL Server and NBomber on the same machine. The section 15 targets are starting values; repeat the 30-minute run on production-like hardware with measured volumes before sign-off.
 

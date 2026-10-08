@@ -212,6 +212,9 @@ BEGIN
     WHERE a.DeliveryId = @DeliveryId AND a.EndedAt IS NULL;
 
     COMMIT;
+
+    -- For the admin activity feed.
+    SELECT MessageId FROM broker.Deliveries WHERE DeliveryId = @DeliveryId;
 END
 GO
 
@@ -247,7 +250,8 @@ BEGIN
 
     COMMIT;
 
-    SELECT @DeadLettered AS DeadLettered, @NextAvailableAt AS NextAvailableAt;
+    SELECT @DeadLettered AS DeadLettered, @NextAvailableAt AS NextAvailableAt,
+           (SELECT MessageId FROM broker.Deliveries WHERE DeliveryId = @DeliveryId) AS MessageId;
 END
 GO
 
@@ -408,5 +412,7 @@ BEGIN
     WHERE dl.DeliveryId = @DeliveryId AND dl.RequeuedAt IS NULL;
 
     COMMIT;
+
+    SELECT MessageId FROM broker.Deliveries WHERE DeliveryId = @DeliveryId;
 END
 GO

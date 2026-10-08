@@ -1,0 +1,163 @@
+@page "/"
+@implements IDisposable
+@inject IBrokerAdminClient Broker
+@inject ILiveFeed Live
+@inject TimeProvider Time
+@inject Microsoft.Extensions.Options.IOptions<DashboardOptions> Options
+
+<PageTitle>Overview · Broker Dashboard</PageTitle>
+
+<header class="page-head">
+    <h1>Overview</h1>
+    <div class="filters" role="group" aria-label="Time window">
+        @foreach (var (minutes, label) in Windows)
+        {
+            <button type="button" class="chip @(minutes == _window ? "selected" : "")" aria-pressed="@(minutes == _window)"
+                    @onclick="() => SetWindowAsync(minutes)">@label</button>
+        }
+    </div>
+</header>
+
+<ErrorNotice Error="@_error" Retry="LoadAsync" />
+
+@if (_overview is { } o)
+{
+    <div class="@(_loading ? "refreshing" : "")">
+        <section class="tiles" aria-label="Totals">
+            <StatTile Label="Pending deliveries" Value="o.Totals.Pending" Note="waiting to be delivered" />
+            <StatTile Label="Leased" Value="o.Totals.Leased" Note="being delivered now" />
+            <StatTile Label="Dead letters" Value="o.Totals.DeadLettered" Note="open in the DLQ" Emphasis="o.Totals.DeadLettered > 0" />
+            <StatTile Label="Published" Value="o.Totals.PublishedInWindow" Note="@($"last {WindowLabel}")" />
+            <StatTile Label="Completed" Value="o.Totals.CompletedInWindow" Note="@($"deliveries, last {WindowLabel}")" />
+        </section>
+
+        <section class="card">
+            <h2>Throughput per minute</h2>
+            <ThroughputChart Points="o.Series" />
+        </section>
+
+        <section class="card">
+            <div class="card-head">
+                <h2>Subscriptions</h2>
+                <span class="muted">@Heartbeat(o)</span>
+            </div>
+            @if (o.Subscriptions.Count == 0)
+            {
+                <p class="muted">No subscriptions yet.</p>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="data">
+                        <thead>
+                            <tr>
+                                <th>Topic</th><th>Subscription</th><th>Mode</th><th>Status</th>
+                                <th class="num">Pending</th><th class="num">Leased</th><th class="num">Dead letters</th><th>Push</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var s in o.Subscriptions)
+                            {
+                                <tr>
+                                    <td><a href="@($"messages?topicId={s.TopicId}")" title="Messages on this topic">@s.TopicName</a></td>
+                                    <td>@s.Name</td>
+                                    <td>@s.DeliveryMode</td>
+                                    <td><StatusBadge Status="@s.Status" /></td>
+                                    <td class="num">@Format.Number(s.Pending)</td>
+                                    <td class="num">@Format.Number(s.Leased)</td>
+                                    <td class="num">
+                                        @if (s.DeadLettered > 0)
+                                        {
+                                            <a href="@($"deadletters?subscriptionId={s.SubscriptionId}")">@Format.Number(s.DeadLettered)</a>
+                                        }
+                                        else
+                                        {
+                                            <span>0</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (s.CircuitState is { } circuit)
+                                        {
+                                            <StatusBadge Status="@circuit" />
+                                        }
+                                        else if (s.ConnectedClients is { } clients)
+                                        {
+                                            <span class="@(clients == 0 ? "warn-text" : "")">@clients connected</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="muted">pull</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    </div>
+}
+else if (_error is null)
+{
+    <p class="muted">Loading…</p>
+}
+
+@code {
+    private static readonly (int Minutes, string Label)[] Windows = [(15, "15 min"), (60, "1 hour"), (360, "6 hours"), (1440, "24 hours")];
+
+    private OverviewResponse? _overview;
+    private string? _error;
+    private bool _loading;
+    private int _window = 60;
+    private RefreshThrottle? _throttle;
+
+    private string WindowLabel => Windows.First(w => w.Minutes == _window).Label;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _throttle = new RefreshThrottle(TimeSpan.FromMilliseconds(Options.Value.RefreshThrottleMs), Time);
+        Live.OverviewChanged += OnOverviewChanged;
+        await LoadAsync();
+    }
+
+    private void OnOverviewChanged() => _throttle?.Request(() => InvokeAsync(LoadAsync));
+
+    private async Task SetWindowAsync(int minutes)
+    {
+        _window = minutes;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _overview = await Broker.GetOverviewAsync(_window);
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            _error = ErrorNotice.Describe(ex);
+        }
+        finally
+        {
+            _loading = false;
+        }
+        StateHasChanged();
+    }
+
+    private string Heartbeat(OverviewResponse o) => o.DispatcherHeartbeatAgeSeconds switch
+    {
+        null => "Dispatcher: no heartbeat yet",
+        > 30 => $"Dispatcher heartbeat stale ({o.DispatcherHeartbeatAgeSeconds:0} s)",
+        var age => $"Dispatcher healthy · heartbeat {age:0} s ago",
+    };
+
+    public void Dispose()
+    {
+        Live.OverviewChanged -= OnOverviewChanged;
+        _throttle?.Dispose();
+    }
+}

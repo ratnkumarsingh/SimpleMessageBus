@@ -1,0 +1,24 @@
+@page "/Error"
+@attribute [AllowAnonymous]
+@layout BareLayout
+@using System.Diagnostics
+
+<PageTitle>Error · Broker Dashboard</PageTitle>
+
+<section class="card">
+    <h1>Something went wrong</h1>
+    <p class="muted">An error occurred while processing your request.</p>
+    @if (!string.IsNullOrEmpty(_requestId))
+    {
+        <p>Request ID: <code>@_requestId</code></p>
+    }
+</section>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private string? _requestId;
+
+    protected override void OnInitialized() => _requestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+}

@@ -1,0 +1,24 @@
+<span class="live-badge @State.ToString().ToLowerInvariant()" role="status" title="@Title">
+    <span class="pulse" aria-hidden="true"></span>@Text
+</span>
+
+@code {
+    [Parameter]
+    public LiveState State { get; set; }
+
+    private string Text => State switch
+    {
+        LiveState.Live => "Live",
+        LiveState.Reconnecting => "Reconnecting · polling",
+        LiveState.Offline => "Offline · polling",
+        _ => "Connecting",
+    };
+
+    private string Title => State switch
+    {
+        LiveState.Live => "Receiving live activity from the broker",
+        LiveState.Offline => "The broker's admin hub is unreachable; pages refresh on a timer",
+        LiveState.Reconnecting => "Lost the broker's admin hub; reconnecting, and refreshing pages on a timer meanwhile",
+        _ => "Connecting to the broker's admin hub",
+    };
+}

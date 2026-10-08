@@ -70,6 +70,7 @@ public sealed record DeadLetterResponse
     public string CorrelationId { get; init; } = "";
     public DateTime MessageCreatedAt { get; init; }
     public JsonElement? Properties { get; init; }
+    /// <summary>JSON null in GET /api/v1/admin/deadletters, which leaves payloads out; read the message for it.</summary>
     public JsonElement Payload { get; init; }
 }
 

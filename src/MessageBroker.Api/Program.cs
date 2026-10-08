@@ -41,6 +41,8 @@ builder.Services.AddBrokerHealthChecks();
 // Detailed hub errors expose server internals, so only outside production.
 builder.Services.AddSignalR(o => o.EnableDetailedErrors = builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"));
 builder.Services.AddSingleton<IDeliveryPushChannel, HubDeliveryPushChannel>();
+// Live activity for admin dashboards on /hubs/admin.
+builder.Services.AddBrokerActivityFeed<HubAdminActivitySink>();
 
 // The payload limit is enforced on the parsed payload (413 with a clear message); this body limit only
 // stops oversized requests early. JSON escaping can roughly double the size, hence the margin.
@@ -79,6 +81,7 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<DeliveriesHub>(DeliveryHub.Path);
+app.MapHub<AdminActivityHub>(AdminHub.Path);
 app.MapBrokerHealthChecks();
 app.MapOpenApi().AllowAnonymous();
 if (apiDocsUi)

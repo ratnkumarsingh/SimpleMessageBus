@@ -26,6 +26,7 @@ public static class DependencyInjection
         services.AddSingleton<IMessageRepository, MessageRepository>();
         services.AddSingleton<IDeliveryRepository, DeliveryRepository>();
         services.AddSingleton<IOperationsRepository, OperationsRepository>();
+        services.AddSingleton<IDashboardRepository, DashboardRepository>();
 
         // Webhook secrets are encrypted with these keys. Without a keys directory, a service account
         // with no user profile keeps them in memory only, and a restart makes every stored secret

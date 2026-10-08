@@ -16,6 +16,7 @@ This is the Phase 1 build: a single broker host backed by one SQL Server databas
 - **Webhook circuit breaker.** After 5 consecutive failures a subscription pauses so waiting messages don't use up attempts.
 - **Security.** API-key authentication, per-topic/subscription permissions, a webhook host allowlist, and webhook secrets encrypted with ASP.NET Core Data Protection.
 - **Operations.** Health checks (`/health/live`, `/health/ready`), structured JSON logs, retention purge, and Swagger UI / Scalar API docs.
+- **Admin dashboard.** A Blazor app that shows throughput, backlog, circuit state and every message's delivery history, updated live over SignalR, with dead-letter requeue.
 - **Data access through stored procedures and views** with Dapper; no ORM. The schema is deployed by DbUp or as a single release script.
 
 ## Repository layout
@@ -28,9 +29,10 @@ This is the Phase 1 build: a single broker host backed by one SQL Server databas
 | `src/MessageBroker.Infrastructure` | Dapper repositories, schema deployer, Data Protection |
 | `src/MessageBroker.Worker` | Dispatcher: lease loop, webhook and SignalR channels, maintenance and retention |
 | `src/MessageBroker.Contracts` | Shared models and a client library (`BrokerClient`, `SignalRDeliveryListener`, webhook signature helpers) |
+| `src/MessageBroker.Dashboard` | Admin dashboard (Blazor Server): overview, message browser, dead letters, topology |
 | `db/` | Migrations, stored procedures, views, functions and `build-release-script.ps1` |
 | `samples/` | Publisher and subscriber samples (see below) |
-| `tests/` | Unit tests, integration tests against SQL Server, and an NBomber load test |
+| `tests/` | Unit tests, integration tests against SQL Server, dashboard component tests (bUnit), and an NBomber load test |
 | `docs/` | Runbook, user guide, acceptance mapping and spec deviations |
 
 ## Getting started
@@ -70,6 +72,23 @@ Invoke-RestMethod -Method Post "$broker/api/v1/topics/payments/messages" -Header
 
 See [docs/runbook.md](docs/runbook.md) for registering applications, issuing keys, creating topics and subscriptions, and granting permissions.
 
+## Admin dashboard
+
+```powershell
+dotnet run --project src/MessageBroker.Dashboard      # http://localhost:5090
+```
+
+Sign in with an **Admin** API key (in development, the bootstrap key from `src/MessageBroker.Api/appsettings.Development.json`). The broker must be running; the dashboard reaches it at `Dashboard:BrokerUrl` (default `http://localhost:5080/`).
+
+| Page | What it shows |
+|---|---|
+| **Overview** | Pending, leased and dead-lettered deliveries; a per-minute throughput chart; each subscription's backlog, webhook circuit state and connected SignalR clients |
+| **Messages** | Search by topic, status, type, correlation ID, publisher and time; each message's payload, deliveries and attempt timeline |
+| **Dead letters** | The DLQ across all subscriptions; requeue one or many |
+| **Topology** | Topics, subscriptions and applications with their permissions (read-only) |
+
+Pages update live through the broker's admin hub (`/hubs/admin`). If the hub can't be reached they fall back to polling, and the badge in the corner shows which. See [runbook section 9](docs/runbook.md#9-admin-dashboard) for deployment and access.
+
 ## Samples
 
 The samples share one onboarding step, which registers the sample applications, topics and subscriptions with a running broker and writes their keys to `samples/samples.local.json` (git-ignored):
@@ -98,7 +117,7 @@ dotnet run --project samples/SamplePublisher -- --Generator:Count 20 --Generator
 dotnet test
 ```
 
-- **Unit tests** need nothing external.
+- **Unit tests** and **dashboard tests** (bUnit) need nothing external.
 - **Integration tests** create throwaway databases on SQL Server. They use the local default instance with Windows authentication unless `BROKER_TEST_SQL` holds another server connection string.
 - **Load test** (NBomber) is a console app that hosts its own broker:
 
