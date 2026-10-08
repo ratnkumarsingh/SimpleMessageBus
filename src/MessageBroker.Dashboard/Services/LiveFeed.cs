@@ -24,7 +24,7 @@ public interface ILiveFeed
     /// <summary>Messages published and deliveries changed, in batches.</summary>
     event Action<IReadOnlyList<MessageActivity>>? Activity;
 
-    /// <summary>Counts changed; also raised every FallbackPollSeconds while <see cref="LiveState.Offline"/>.</summary>
+    /// <summary>Counts changed; also raised every FallbackPollSeconds while the feed is not <see cref="LiveState.Live"/>.</summary>
     event Action? OverviewChanged;
 
     event Action? StateChanged;
@@ -34,8 +34,8 @@ public interface ILiveFeed
 }
 
 /// <summary>
-/// A connection to the broker's admin hub with the operator's key. It reconnects forever; while it
-/// cannot, a timer raises <see cref="OverviewChanged"/> so pages keep refreshing by polling.
+/// A connection to the broker's admin hub with the operator's key. It reconnects forever; while it is
+/// not live, a timer raises <see cref="OverviewChanged"/> so pages keep refreshing by polling.
 /// </summary>
 public sealed class BrokerLiveFeed(
     IOptions<DashboardOptions> options,
@@ -118,7 +118,8 @@ public sealed class BrokerLiveFeed(
             {
                 return;
             }
-            if (State == LiveState.Offline)
+            // Reconnecting can last indefinitely (the retry never gives up), so poll then too.
+            if (State != LiveState.Live)
                 OverviewChanged?.Invoke();
         }
     }

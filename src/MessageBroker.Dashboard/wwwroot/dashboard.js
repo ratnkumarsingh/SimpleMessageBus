@@ -54,8 +54,12 @@ function draw(state) {
         label.textContent = value.toLocaleString("en-US");
     }
     const every = Math.max(1, Math.ceil(n / 6));
-    for (let i = 0; i < n; i += every) {
-        const label = svg("text", { x: x(i), y: height - 6, "text-anchor": "middle", class: "tick" }, svgEl);
+    const labelled = [];
+    for (let i = 0; i < n; i += every) labelled.push(i);
+    if (n > 1 && n - 1 - labelled[labelled.length - 1] >= every / 2) labelled.push(n - 1);
+    for (const i of labelled) {
+        const anchor = i === n - 1 && n > 1 ? "end" : "middle";
+        const label = svg("text", { x: x(i), y: height - 6, "text-anchor": anchor, class: "tick" }, svgEl);
         label.textContent = hhmm(points[i].minute);
     }
 

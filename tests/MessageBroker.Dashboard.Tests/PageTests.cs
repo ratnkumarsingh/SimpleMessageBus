@@ -254,7 +254,7 @@ public sealed class PageTests : PageTest
 
     [Theory(DisplayName = "V08 The live badge names each feed state")]
     [InlineData(LiveState.Live, "Live")]
-    [InlineData(LiveState.Reconnecting, "Reconnecting")]
+    [InlineData(LiveState.Reconnecting, "Reconnecting · polling")]
     [InlineData(LiveState.Offline, "Offline · polling")]
     [InlineData(LiveState.Connecting, "Connecting")]
     public void V08_LiveBadge(LiveState state, string text)

@@ -82,24 +82,27 @@
     </div>
 }
 
-@if (_confirming is { Count: > 0 } pending)
-{
-    <div class="notice info" role="alertdialog" aria-label="Confirm requeue">
-        <span>Requeue @pending.Count @(pending.Count == 1 ? "delivery" : "deliveries")? Each returns to Pending with a fresh attempt budget and is delivered again.</span>
-        <button type="button" class="primary" @onclick="RequeueAsync" disabled="@_working">@(_working ? "Requeuing…" : "Requeue")</button>
-        <button type="button" class="secondary" @onclick="() => _confirming = null" disabled="@_working">Cancel</button>
-    </div>
-}
-else if (_selected.Count > 0)
-{
-    <div class="notice info" role="status">
-        <span>@_selected.Count selected</span>
-        <button type="button" class="primary" @onclick="() => Confirm(_selected.ToList())">Requeue selected</button>
-        <button type="button" class="link" @onclick="() => _selected.Clear()">Clear selection</button>
-    </div>
-}
-
 <section class="card @(_loading ? "refreshing" : "")">
+    @* Always present, so selecting a row never moves the rows below. *@
+    <div class="toolbar">
+        @if (_confirming is { Count: > 0 } pending)
+        {
+            <div class="confirm" role="alertdialog" aria-label="Confirm requeue">
+                <span>Requeue @pending.Count @(pending.Count == 1 ? "delivery" : "deliveries")? Each returns to Pending with a fresh attempt budget and is delivered again.</span>
+                <button type="button" class="primary" @onclick="RequeueAsync" disabled="@_working">@(_working ? "Requeuing…" : "Requeue")</button>
+                <button type="button" class="secondary" @onclick="() => _confirming = null" disabled="@_working">Cancel</button>
+            </div>
+        }
+        else
+        {
+            <span class="muted" role="status">@(_selected.Count == 0 ? "Select dead letters to requeue them together" : $"{_selected.Count} selected")</span>
+            <button type="button" class="primary" disabled="@(_selected.Count == 0)" @onclick="() => Confirm(_selected.ToList())">Requeue selected</button>
+            @if (_selected.Count > 0)
+            {
+                <button type="button" class="link" @onclick="() => _selected.Clear()">Clear selection</button>
+            }
+        }
+    </div>
     @if (_rows.Count == 0 && !_loading && _error is null)
     {
         <p class="muted">No dead letters match. Nice.</p>

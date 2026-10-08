@@ -44,8 +44,11 @@ public static class Format
         _ => (milliseconds.Value / 1000d).ToString("0.0#", CultureInfo.InvariantCulture) + " s",
     };
 
-    /// <summary>The first block of a GUID, enough to tell rows apart.</summary>
-    public static string Short(Guid id) => id.ToString()[..8];
+    /// <summary>
+    /// The last 8 hex digits of a GUID, enough to tell rows apart. Not the first block: message IDs are
+    /// UUIDv7, which start with a timestamp, so messages published together share it.
+    /// </summary>
+    public static string Short(Guid id) => id.ToString("N")[^8..];
 
     public static string Json(JsonElement? element) =>
         element is { ValueKind: not JsonValueKind.Undefined } e ? JsonSerializer.Serialize(e, Indented) : "";

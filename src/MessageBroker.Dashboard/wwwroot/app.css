@@ -163,6 +163,10 @@ label { font-size: 12px; color: var(--ink-2); font-weight: 500; }
 .notice.error { border-left: 4px solid var(--critical); }
 .notice.info { border-left: 4px solid var(--accent); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .notice.good { border-left: 4px solid var(--good); }
+.notice > button.link { margin-left: 8px; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 36px; margin-bottom: 8px; }
+.toolbar .confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.toolbar button.primary { padding: 6px 12px; }
 
 /* ---- stat tiles ---- */
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }

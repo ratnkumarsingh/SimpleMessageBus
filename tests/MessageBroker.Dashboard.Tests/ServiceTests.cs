@@ -74,6 +74,15 @@ public sealed class ServiceTests
         Assert.Equal("key", DashboardClaims.PrefixOf("garbage"));
     }
 
+    [Fact(DisplayName = "Short IDs tell apart UUIDv7 message IDs created in the same millisecond")]
+    public void ShortIdsDistinguishVersion7()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var ids = Enumerable.Range(0, 50).Select(_ => Guid.CreateVersion7(now)).ToList();
+        Assert.Equal(50, ids.Select(Format.Short).Distinct().Count());
+        Assert.All(ids, id => Assert.Equal(8, Format.Short(id).Length));
+    }
+
     [Fact(DisplayName = "V01e Every page needs sign-in; the sign-in page itself is open")]
     public async Task V01e_PagesRequireSignIn()
     {

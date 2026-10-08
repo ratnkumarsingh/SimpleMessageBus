@@ -65,25 +65,10 @@
                         <a href="@($"deadletters?subscriptionId={d.SubscriptionId}")">open in dead letters</a>
                     }
                 </div>
-                <div class="muted" style="font-size: 12.5px; margin-top: 4px">
-                    @switch (d.Status)
-                    {
-                        case "Pending":
-                            <span>Next attempt at @Format.Utc(d.AvailableAt)</span>
-                            break;
-                        case "Leased":
-                            <span>Leased until @Format.Utc(d.LockedUntil)</span>
-                            break;
-                        case "Completed":
-                        case "Cancelled":
-                            <span>Finished at @Format.Utc(d.CompletedAt)</span>
-                            break;
-                    }
-                    @if (d.ExpiresAt is not null)
-                    {
-                        <span> · expires @Format.Utc(d.ExpiresAt)</span>
-                    }
-                </div>
+                @if (Timing(d) is { Length: > 0 } timing)
+                {
+                    <div class="muted" style="font-size: 12.5px; margin-top: 4px">@timing</div>
+                }
                 @if (d.Attempts.Count > 0)
                 {
                     <ol class="timeline" aria-label="Attempts">
@@ -108,7 +93,7 @@
                                 <div class="when">@Format.Utc(a.LeasedAt) → @Format.Utc(a.EndedAt) · @Format.Duration(a.DurationMs)</div>
                                 @if (a.ErrorCode is not null || a.ErrorMessage is not null)
                                 {
-                                    <div class="err"><span class="mono">@a.ErrorCode</span> @a.ErrorMessage</div>
+                                    <div class="err"><span class="mono">@a.ErrorCode</span>@(a.ErrorCode is not null && a.ErrorMessage is not null ? ": " : "")@a.ErrorMessage</div>
                                 }
                                 @if (a.ErrorDetail is not null)
                                 {
@@ -224,6 +209,18 @@
     private string PublisherName(Guid appId) => _apps.FirstOrDefault(a => a.AppId == appId)?.Name ?? appId.ToString();
 
     private Guid? TopicIdOf(string name) => _topics.FirstOrDefault(t => t.Name == name)?.TopicId;
+
+    private static string Timing(MessageDeliveryResponse d) => string.Join(" · ", new[]
+    {
+        d.Status switch
+        {
+            "Pending" => $"Next attempt at {Format.Utc(d.AvailableAt)}",
+            "Leased" => $"Leased until {Format.Utc(d.LockedUntil)}",
+            "Completed" or "Cancelled" => $"Finished at {Format.Utc(d.CompletedAt)}",
+            _ => null,
+        },
+        d.ExpiresAt is { } expires && d.Status is "Pending" or "Leased" ? $"expires {Format.Utc(expires)}" : null,
+    }.OfType<string>());
 
     private static string AttemptKind(string? outcome) => outcome switch
     {
