@@ -1,6 +1,7 @@
 using MessageBroker.Dashboard;
 using MessageBroker.Dashboard.Components;
 using MessageBroker.Dashboard.Services;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
@@ -52,9 +53,12 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
-// A form POST (with the antiforgery token), so another site cannot sign an operator out.
-app.MapPost("/logout", async (HttpContext http) =>
+// A form POST with the antiforgery token, so another site cannot sign an operator out. Minimal APIs
+// only enforce antiforgery when they bind form data, so this one checks the token itself.
+app.MapPost("/logout", async (HttpContext http, IAntiforgery antiforgery) =>
 {
+    if (!await antiforgery.IsRequestValidAsync(http))
+        return Results.BadRequest();
     await http.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     return Results.LocalRedirect("/login");
 });

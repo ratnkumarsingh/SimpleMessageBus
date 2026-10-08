@@ -43,6 +43,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MessageBroker.LoadTests", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MessageBroker.Dashboard", "src\MessageBroker.Dashboard\MessageBroker.Dashboard.csproj", "{12AF6EEC-43F0-4D35-96DC-C08A213965A4}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MessageBroker.Dashboard.Tests", "tests\MessageBroker.Dashboard.Tests\MessageBroker.Dashboard.Tests.csproj", "{6BB60B4B-D313-4873-828C-8CE19A5FDF8B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -257,6 +259,18 @@ Global
 		{12AF6EEC-43F0-4D35-96DC-C08A213965A4}.Release|x64.Build.0 = Release|Any CPU
 		{12AF6EEC-43F0-4D35-96DC-C08A213965A4}.Release|x86.ActiveCfg = Release|Any CPU
 		{12AF6EEC-43F0-4D35-96DC-C08A213965A4}.Release|x86.Build.0 = Release|Any CPU
+		{6BB60B4B-D313-4873-828C-8CE19A5FDF8B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6BB60B4B-D313-4873-828C-8CE19A5FDF8B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6BB60B4B-D313-4873-828C-8CE19A5FDF8B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{6BB60B4B-D313-4873-828C-8CE19A5FDF8B}.Debug|x64.Build.0 = Debug|Any CPU
+		{6BB60B4B-D313-4873-828C-8CE19A5FDF8B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{6BB60B4B-D313-4873-828C-8CE19A5FDF8B}.Debug|x86.Build.0 = Debug|Any CPU
+		{6BB60B4B-D313-4873-828C-8CE19A5FDF8B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6BB60B4B-D313-4873-828C-8CE19A5FDF8B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6BB60B4B-D313-4873-828C-8CE19A5FDF8B}.Release|x64.ActiveCfg = Release|Any CPU
+		{6BB60B4B-D313-4873-828C-8CE19A5FDF8B}.Release|x64.Build.0 = Release|Any CPU
+		{6BB60B4B-D313-4873-828C-8CE19A5FDF8B}.Release|x86.ActiveCfg = Release|Any CPU
+		{6BB60B4B-D313-4873-828C-8CE19A5FDF8B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -279,5 +293,6 @@ Global
 		{1188C12A-966D-4BDA-B4FC-DF66480AB79F} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 		{53556032-C2AE-4AC6-8CD9-2CF2A37CF43C} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{12AF6EEC-43F0-4D35-96DC-C08A213965A4} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{6BB60B4B-D313-4873-828C-8CE19A5FDF8B} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal
