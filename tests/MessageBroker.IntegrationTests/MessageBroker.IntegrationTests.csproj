@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="Respawn" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Dapper" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\MessageBroker.Api\MessageBroker.Api.csproj" />
+    <ProjectReference Include="..\..\samples\SamplePublisher\SamplePublisher.csproj" />
+    <ProjectReference Include="..\..\samples\WebhookSubscriber\WebhookSubscriber.csproj" />
+    <ProjectReference Include="..\..\samples\SignalRSubscriber\SignalRSubscriber.csproj" />
+    <ProjectReference Include="..\..\samples\PullSubscriber\PullSubscriber.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>
+

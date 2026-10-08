@@ -1,0 +1,30 @@
+@page "/"
+@using Samples.Shared
+@implements IDisposable
+@inject NotificationFeed Feed
+
+<PageTitle>Notifications</PageTitle>
+
+<main class="card">
+    <h1>Received notifications</h1>
+    <p class="hint">Listening over SignalR. Keep this page open and press Send in BlazorPublisher.</p>
+    @if (Feed.Items.Count == 0)
+    {
+        <p class="hint">Nothing received yet.</p>
+    }
+    <ul>
+        @foreach (var item in Feed.Items)
+        {
+            <li class="@item.Notification.Level.ToString().ToLowerInvariant()">
+                <strong>@item.Notification.Title</strong> — @item.Notification.Text
+                <small>@item.ReceivedAt.ToLocalTime().ToString("T")</small>
+            </li>
+        }
+    </ul>
+</main>
+
+@code {
+    protected override void OnInitialized() => Feed.Received += OnReceived;
+    private void OnReceived(ReceivedNotification item) => _ = InvokeAsync(StateHasChanged);
+    public void Dispose() => Feed.Received -= OnReceived;
+}

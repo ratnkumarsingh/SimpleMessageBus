@@ -1,0 +1,38 @@
+@using Samples.Shared
+@implements IDisposable
+@inject NotificationFeed Feed
+
+<div class="toasts" aria-live="polite">
+    @foreach (var toast in toasts)
+    {
+        <div class="toast @toast.Notification.Level.ToString().ToLowerInvariant()" @key="toast.MessageId">
+            <button class="close" title="Dismiss" @onclick="() => Dismiss(toast)">×</button>
+            <strong>@toast.Notification.Title</strong>
+            <div>@toast.Notification.Text</div>
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly TimeSpan ShowFor = TimeSpan.FromSeconds(6);
+    private readonly List<ReceivedNotification> toasts = [];
+
+    protected override void OnInitialized() => Feed.Received += OnReceived;
+
+    // Raised on the broker listener's thread: marshal onto this circuit's renderer.
+    private void OnReceived(ReceivedNotification item) => _ = InvokeAsync(async () =>
+    {
+        toasts.Add(item);
+        StateHasChanged();
+        await Task.Delay(ShowFor);
+        Dismiss(item);
+    });
+
+    private void Dismiss(ReceivedNotification item)
+    {
+        if (toasts.Remove(item))
+            StateHasChanged();
+    }
+
+    public void Dispose() => Feed.Received -= OnReceived;
+}

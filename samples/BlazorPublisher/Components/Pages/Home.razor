@@ -1,0 +1,65 @@
+@page "/"
+@using MessageBroker.Contracts.Client
+@using Samples.Shared
+@inject BrokerClient Broker
+@inject SampleSettings Settings
+
+<PageTitle>Send a notification</PageTitle>
+
+<main class="card">
+    <h1>Send a notification</h1>
+    <p class="hint">Publishes to the <code>@Settings.NotificationsTopicName</code> topic. BlazorSubscriber shows it as a toast.</p>
+
+    <label>Title <input @bind="title" maxlength="80" /></label>
+    <label>Message <textarea @bind="text" rows="3" maxlength="500"></textarea></label>
+    <label>Level
+        <select @bind="level">
+            @foreach (var l in Enum.GetValues<NotificationLevel>())
+            {
+                <option value="@l">@l</option>
+            }
+        </select>
+    </label>
+
+    <button disabled="@(sending || string.IsNullOrWhiteSpace(title))" @onclick="SendAsync">
+        @(sending ? "Sending…" : "Send")
+    </button>
+
+    @if (status is not null)
+    {
+        <p class="status @(failed ? "error" : "ok")">@status</p>
+    }
+</main>
+
+@code {
+    private string title = "Hello";
+    private string text = "Sent from BlazorPublisher.";
+    private NotificationLevel level = NotificationLevel.Info;
+    private bool sending;
+    private bool failed;
+    private string? status;
+
+    private async Task SendAsync()
+    {
+        sending = true;
+        status = null;
+        try
+        {
+            var notification = new UserNotification(title.Trim(), text.Trim(), level, "BlazorPublisher");
+            // A new key per click; a retry of the same click would reuse it.
+            var result = await Broker.PublishAsync(Settings.NotificationsTopicName,
+                NotificationMessages.ToPublishRequest(notification), idempotencyKey: Guid.NewGuid().ToString("N"));
+            failed = false;
+            status = $"Published message {result.MessageId} to {result.DeliveryCount} subscription(s).";
+        }
+        catch (Exception ex)
+        {
+            failed = true;
+            status = $"Could not publish: {ex.Message}";
+        }
+        finally
+        {
+            sending = false;
+        }
+    }
+}

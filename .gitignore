@@ -1,0 +1,13 @@
+bin/
+obj/
+.vs/
+*.user
+TestResults/
+artifacts/
+
+# Written by "SamplePublisher setup"; holds API keys and a webhook secret.
+samples/samples.local.json
+
+# Local-only material
+.claude-book/
+Internal_Message_Broker_Phase1_Architecture.pdf

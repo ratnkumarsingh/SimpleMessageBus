@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Internal Message Broker — User Guide</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 20mm 16mm; }
+  :root { --ink:#1d2330; --muted:#5b6475; --line:#d9dee7; --accent:#1f5fbf; --soft:#f3f6fb; --warn:#9a5b00; --warnbg:#fff6e6; --ok:#17733f; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: var(--ink); font-size: 10.5pt; line-height: 1.5; margin: 0; }
+  h1 { font-size: 20pt; margin: 0 0 6pt; color: var(--accent); }
+  h2 { font-size: 15pt; color: var(--accent); border-bottom: 2px solid var(--accent); padding-bottom: 3pt; margin: 0 0 10pt; }
+  h3 { font-size: 12pt; margin: 16pt 0 6pt; }
+  h4 { font-size: 10.5pt; margin: 12pt 0 4pt; }
+  p { margin: 0 0 7pt; }
+  ul, ol { margin: 0 0 8pt; padding-left: 18pt; }
+  li { margin-bottom: 2pt; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background: var(--soft); padding: 0 2pt; border-radius: 2pt; }
+  pre { font-family: Consolas, "Courier New", monospace; font-size: 8.4pt; line-height: 1.38; background: #f6f8fa; border: 1px solid var(--line); border-left: 3px solid var(--accent); padding: 7pt 9pt; margin: 4pt 0 10pt; white-space: pre-wrap; word-break: break-word; page-break-inside: avoid; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  table { border-collapse: collapse; width: 100%; margin: 4pt 0 10pt; font-size: 9.3pt; page-break-inside: auto; }
+  tr { page-break-inside: avoid; }
+  th, td { border: 1px solid var(--line); padding: 4pt 6pt; text-align: left; vertical-align: top; }
+  th { background: var(--soft); font-weight: 600; }
+  .chapter { page-break-before: always; }
+  .note, .warn, .tip { border-radius: 3pt; padding: 6pt 9pt; margin: 6pt 0 10pt; page-break-inside: avoid; }
+  .note { background: var(--soft); border-left: 3px solid var(--accent); }
+  .warn { background: var(--warnbg); border-left: 3px solid var(--warn); }
+  .tip { background: #eaf7ef; border-left: 3px solid var(--ok); }
+  .note b:first-child, .warn b:first-child, .tip b:first-child { display: inline; }
+  .cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; }
+  .cover .kicker { color: var(--muted); letter-spacing: .12em; text-transform: uppercase; font-size: 9.5pt; }
+  .cover h1 { font-size: 30pt; margin: 8pt 0 4pt; color: var(--ink); }
+  .cover .sub { font-size: 14pt; color: var(--accent); margin-bottom: 26pt; }
+  .cover .meta { color: var(--muted); font-size: 10pt; border-top: 1px solid var(--line); padding-top: 10pt; max-width: 120mm; }
+  .toc ol { padding-left: 16pt; }
+  .toc li { margin: 3pt 0; }
+  .toc ol ol { list-style: none; padding-left: 14pt; color: var(--muted); font-size: 9.5pt; }
+  .roles { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8pt; margin: 6pt 0 12pt; }
+  .role { border: 1px solid var(--line); border-top: 3px solid var(--accent); padding: 7pt 8pt; border-radius: 3pt; font-size: 9.3pt; }
+  .role h4 { margin: 0 0 4pt; }
+  .role ul { padding-left: 13pt; margin: 0; }
+  .flow { font-family: Consolas, monospace; font-size: 8.6pt; background: #fbfcfe; border: 1px dashed var(--line); padding: 8pt; white-space: pre; margin: 4pt 0 10pt; page-break-inside: avoid; }
+  .check li { list-style: none; margin-left: -14pt; }
+  .check li::before { content: "☐  "; color: var(--accent); }
+  .small { font-size: 9pt; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- ============================== COVER ============================== -->
+<section class="cover">
+  <div class="kicker">SimpleMessageBus · Phase 1</div>
+  <h1>Internal Message Broker</h1>
+  <div class="sub">User guide for publishers and subscribers</div>
+  <div class="meta">
+    How to connect an application to the broker, publish messages, and receive them reliably
+    by webhook, SignalR or pull, plus what the broker administrator does to set you up.<br><br>
+    Version 1.0 · October 2026<br>
+    API version: <code>/api/v1</code> · Client library: <code>MessageBroker.Contracts</code>
+  </div>
+</section>
+
+<!-- ============================== TOC ============================== -->
+<section class="chapter toc">
+  <h2>Contents</h2>
+  <ol>
+    <li>Overview
+      <ol><li>1.1 What the broker does</li><li>1.2 Key concepts</li><li>1.3 Who does what</li><li>1.4 Delivery guarantees</li></ol></li>
+    <li>Getting connected
+      <ol><li>2.1 What to ask the administrator for</li><li>2.2 What the administrator does</li><li>2.3 Authenticating your calls</li></ol></li>
+    <li>Publisher guide
+      <ol><li>3.1 Publishing a message</li><li>3.2 Idempotency and retries</li><li>3.3 The outbox pattern</li><li>3.4 Message design</li><li>3.5 Tracking what you sent</li><li>3.6 Publisher checklist</li></ol></li>
+    <li>Subscriber guide
+      <ol><li>4.1 Choosing a delivery mode</li><li>4.2 Rules every subscriber follows</li><li>4.3 The delivery format</li><li>4.4 Settling: ACK, NACK, dead-letter, renew</li><li>4.5 Retries and backoff</li></ol></li>
+    <li>Webhook subscribers</li>
+    <li>SignalR subscribers</li>
+    <li>Pull subscribers</li>
+    <li>Dead letters and troubleshooting
+      <ol><li>8.1 Reading your dead-letter queue</li><li>8.2 Getting a message requeued</li><li>8.3 Errors and what to do</li></ol></li>
+    <li>Reference
+      <ol><li>9.1 Subscription settings</li><li>9.2 Limits</li><li>9.3 Endpoints</li><li>9.4 Subscriber checklist</li><li>9.5 Glossary</li></ol></li>
+  </ol>
+</section>
+
+<!-- ============================== 1 OVERVIEW ============================== -->
+<section class="chapter">
+  <h2>1. Overview</h2>
+
+  <h3>1.1 What the broker does</h3>
+  <p>The Internal Message Broker moves messages between internal applications. A <b>publisher</b> sends a message to a named <b>topic</b>. Every <b>subscription</b> on that topic gets its own copy, a <b>delivery</b>, and the broker hands each delivery to its subscriber. It keeps retrying until the subscriber confirms the work is done, or until the delivery is moved to a dead-letter queue for a person to look at.</p>
+  <p>Publishers and subscribers never call each other directly. A publisher does not need to know who listens, and a subscriber that is down or slow does not slow the publisher down: its messages wait in the broker.</p>
+
+  <div class="flow">  Publisher ──POST /topics/payments/messages──►  ┌──────────── Broker (SQL Server) ────────────┐
+                                                 │ topic "payments"                             │
+                                                 │   ├─ subscription "billing"  (Webhook) ──────┼──► HTTPS POST to billing
+                                                 │   ├─ subscription "ledger"   (SignalR) ──────┼──► hub event to ledger
+                                                 │   └─ subscription "reports"  (Pull)  ◄───────┼─── reports polls /receive
+                                                 └──────────────────────────────────────────────┘</div>
+
+  <h3>1.2 Key concepts</h3>
+  <table>
+    <tr><th style="width:22%">Term</th><th>Meaning</th></tr>
+    <tr><td>Application</td><td>A registered client (a service, job or app). It authenticates with an <b>API key</b>, and it can hold two active keys so keys can be rotated without downtime.</td></tr>
+    <tr><td>Topic</td><td>A named channel such as <code>payments</code>. Publishers need <b>Publish</b> permission on it.</td></tr>
+    <tr><td>Subscription</td><td>A named consumer of one topic, owned by one application, with one <b>delivery mode</b> (Webhook, SignalR or Pull) and its own retry settings.</td></tr>
+    <tr><td>Message</td><td>What a publisher sends: a <code>messageType</code>, an optional <code>correlationId</code>, optional string <code>properties</code>, and a JSON <code>payload</code>. A message is stored once.</td></tr>
+    <tr><td>Delivery</td><td>One message for one subscription. Each subscription progresses, retries and fails independently.</td></tr>
+    <tr><td>Lease and lock token</td><td>When a delivery is handed out it is <b>leased</b> until <code>lockedUntil</code>, and comes with a <code>lockToken</code>. Only that token can settle it, and only before the lease ends.</td></tr>
+    <tr><td>Attempt</td><td>One try at a delivery. Every attempt is recorded with its outcome, error code and duration.</td></tr>
+    <tr><td>Dead-letter queue (DLQ)</td><td>Where a delivery goes when it cannot succeed: retries ran out, the subscriber rejected it, or its time-to-live passed. An administrator can requeue it.</td></tr>
+  </table>
+
+  <h3>1.3 Who does what</h3>
+  <div class="roles">
+    <div class="role"><h4>Broker administrator</h4><ul>
+      <li>Registers applications and issues API keys</li>
+      <li>Creates topics and subscriptions</li>
+      <li>Grants Publish / Receive permissions</li>
+      <li>Allowlists webhook hosts</li>
+      <li>Requeues dead letters; rotates keys and secrets</li></ul></div>
+    <div class="role"><h4>Publisher (producer)</h4><ul>
+      <li>Keeps its API key secret</li>
+      <li>Publishes with an <code>Idempotency-Key</code></li>
+      <li>Retries on 503 or network errors with the same key</li>
+      <li>Uses an outbox so no message is lost</li>
+      <li>Sets <code>correlationId</code> for tracing</li></ul></div>
+    <div class="role"><h4>Subscriber (consumer)</h4><ul>
+      <li>Receives by webhook, SignalR or pull</li>
+      <li>Processes idempotently: deduplicates on <code>messageId</code></li>
+      <li>ACKs only after the work is committed</li>
+      <li>NACKs failures; dead-letters bad messages</li>
+      <li>Verifies webhook signatures</li>
+      <li>Watches its dead-letter queue</li></ul></div>
+  </div>
+
+  <h3>1.4 Delivery guarantees</h3>
+  <ul>
+    <li><b>No accepted message is lost.</b> The broker answers <code>201</code> only after the message and all its deliveries are committed to the database.</li>
+    <li><b>At-least-once delivery.</b> A delivery can arrive more than once, for example when a subscriber crashes before acknowledging, when a lease expires, or after a broker restart. <b>Subscribers must deduplicate.</b></li>
+    <li><b>One holder at a time.</b> A delivery is leased to one consumer at a time. A settle with a stale lock token is refused with <code>410</code>.</li>
+    <li><b>Isolation.</b> A failing subscription never delays or changes another subscription's deliveries.</li>
+    <li><b>Ordering is not guaranteed.</b> Deliveries are generally handed out oldest first, but retries, parallel consumers and redeliveries mean messages can be processed out of order. Design for that (see 3.4).</li>
+  </ul>
+</section>
+
+<!-- ============================== 2 GETTING CONNECTED ============================== -->
+<section class="chapter">
+  <h2>2. Getting connected</h2>
+
+  <h3>2.1 What to ask the administrator for</h3>
+  <table>
+    <tr><th style="width:28%">You are…</th><th>Ask for</th><th style="width:30%">You will receive</th></tr>
+    <tr><td>A publisher</td><td>An application registration, and Publish permission on the topic(s) you send to (or a new topic, with its default time-to-live).</td><td>Your API key (shown once) and the topic name.</td></tr>
+    <tr><td>A webhook subscriber</td><td>A subscription on the topic, in Webhook mode, with your HTTPS endpoint URL. Your endpoint's host must be on the broker's webhook allowlist. Say which retry settings you need (9.1).</td><td>Your API key, the subscription ID and the <b>webhook secret</b> (shown once).</td></tr>
+    <tr><td>A SignalR subscriber</td><td>A subscription in SignalR mode.</td><td>Your API key and the subscription ID.</td></tr>
+    <tr><td>A pull subscriber</td><td>A subscription in Pull mode.</td><td>Your API key and the subscription ID.</td></tr>
+  </table>
+  <div class="warn"><b>Secrets are shown once.</b> The API key and the webhook secret are displayed only when they are created. Store them in your secret store (Key Vault, environment configuration). Never put them in source control, log them, or send them in URLs. The only exception is the SignalR <code>access_token</code>, which the broker redacts from its logs.</div>
+
+  <h3>2.2 What the administrator does</h3>
+  <p>These steps are for the broker administrator, using an Admin API key (<code>$h</code> holds the <code>Authorization</code> header). They are listed so both sides know what to expect.</p>
+<pre><code># 1. Register the application and issue a key (the key is returned once)
+POST /api/v1/admin/applications              {"name":"billing-service"}
+POST /api/v1/admin/applications/{appId}/keys {}          # optional {"expiresAt":"2027-10-01T00:00:00Z"}
+
+# 2. Publisher: create the topic (once) and grant Publish
+POST /api/v1/topics                          {"name":"payments","defaultTtlSeconds":86400}
+POST /api/v1/admin/applications/{appId}/permissions
+     {"resourceType":"Topic","resourceId":"{topicId}","permission":"Publish"}
+
+# 3. Webhook subscriber: allowlist the receiving host (once per host)
+POST /api/v1/admin/webhook-hosts             {"host":"billing.internal"}
+
+# 4. Subscriber: create the subscription. Its owner gets Receive automatically.
+POST /api/v1/topics/{topicId}/subscriptions
+     {"name":"billing-invoices","ownerAppId":"{appId}","deliveryMode":"Webhook",
+      "webhookUrl":"https://billing.internal/webhooks/payments",
+      "maxAttempts":5,"lockDurationSeconds":60,"webhookTimeoutSeconds":30}
+     → the response includes "webhookSecret" (Webhook mode only, shown once)</code></pre>
+  <p>Names of topics, subscriptions and applications use letters, digits, <code>.</code>, <code>_</code> and <code>-</code>, up to 100 characters, and are unique ignoring case.</p>
+
+  <h3>2.3 Authenticating your calls</h3>
+  <p>Every REST call carries the API key in the <code>Authorization</code> header with the <code>ApiKey</code> scheme:</p>
+<pre><code>Authorization: ApiKey mbk_k3x9q2...</code></pre>
+  <p>The SignalR hub takes the same key as an access token (see chapter 6). Calls with no key, or with an unknown, deactivated or expired key, get <code>401</code>. Calls outside your permissions get <code>403</code>.</p>
+  <table>
+    <tr><th>Permission</th><th>On</th><th>Lets you</th></tr>
+    <tr><td><code>Publish</code></td><td>Topic</td><td>Publish messages to it.</td></tr>
+    <tr><td><code>Receive</code></td><td>Subscription</td><td>Pull, ACK, NACK and renew its deliveries; join it on the SignalR hub; read its dead-letter queue. The owning application has it automatically.</td></tr>
+    <tr><td><code>Manage</code></td><td>Subscription</td><td>Everything Receive allows.</td></tr>
+  </table>
+  <div class="note"><b>Key rotation.</b> When the administrator gives you a new key, deploy it, check that your calls succeed, then tell the administrator to deactivate the old key. Both keys work in between.</div>
+
+  <h4>Using the .NET client library</h4>
+  <p>.NET applications can use the <code>MessageBroker.Contracts</code> package. It includes the request and response models, the typed <code>BrokerClient</code>, the <code>SignalRDeliveryListener</code> and the webhook signature verifier.</p>
+<pre><code>// Program.cs: registers BrokerClient as a typed HttpClient with the base address and the key
+builder.Services.AddBrokerClient(o =>
+{
+    o.BaseAddress = new Uri(builder.Configuration["Broker:Url"]!);   // e.g. https://broker.internal/
+    o.ApiKey      = builder.Configuration["Broker:ApiKey"]!;          // from your secret store
+});</code></pre>
+  <p>Other languages call the REST API directly. Every endpoint takes and returns JSON with camelCase names.</p>
+</section>
+
+<!-- ============================== 3 PUBLISHER ============================== -->
+<section class="chapter">
+  <h2>3. Publisher guide</h2>
+
+  <h3>3.1 Publishing a message</h3>
+<pre><code>POST /api/v1/topics/{topicName}/messages
+Authorization: ApiKey &lt;your key&gt;
+Idempotency-Key: 9f1c2d7e-order-48213-paid          ← recommended
+Content-Type: application/json
+
+{
+  "messageType":   "PaymentProcessed.v1",               ← required, ≤ 200 chars
+  "correlationId": "ORDER-48213",                       ← optional, ≤ 100 chars (defaults to the message ID)
+  "ttlSeconds":    3600,                                ← optional; otherwise the topic default
+  "properties":    { "tenant": "in-01", "region": "south" },   ← optional, string values only, ≤ 4 KB
+  "payload":       { "paymentId": "PAY-12345", "amount": 1500.00, "currency": "INR" }   ← required JSON, ≤ 256 KB
+}</code></pre>
+  <table>
+    <tr><th style="width:22%">Response</th><th>Meaning</th><th style="width:34%">What you do</th></tr>
+    <tr><td><code>201 Created</code></td><td>Stored and committed. The body is <code>{"messageId":"…","deliveryCount":3}</code>, where deliveryCount is the number of subscriptions that will receive it.</td><td>Done. Record the <code>messageId</code> if you want to trace it.</td></tr>
+    <tr><td><code>200 OK</code></td><td>Duplicate: a message with this <code>Idempotency-Key</code> was already accepted. The body holds the <b>original</b> message ID.</td><td>Treat as success.</td></tr>
+    <tr><td><code>400</code></td><td>Validation failed. The problem details list each field and why.</td><td>Fix the message. Do not retry unchanged.</td></tr>
+    <tr><td><code>401 / 403</code></td><td>Bad key, or no Publish permission on this topic.</td><td>Check the configuration or ask the administrator.</td></tr>
+    <tr><td><code>404</code></td><td>The topic does not exist.</td><td>Check the topic name.</td></tr>
+    <tr><td><code>413</code></td><td>Payload over 256 KB.</td><td>Send a reference (see 3.4).</td></tr>
+    <tr><td><code>503</code> or network error / timeout</td><td>The broker or its database is temporarily unavailable. The message may or may not have been stored.</td><td><b>Retry with the same Idempotency-Key</b>, with backoff.</td></tr>
+  </table>
+  <p>A topic with no subscriptions still accepts messages (<code>deliveryCount</code> 0). They are stored for tracing but nobody receives them, and subscriptions created later do not receive earlier messages.</p>
+
+  <h4>With the .NET client</h4>
+<pre><code>public sealed class PaymentEvents(BrokerClient broker)
+{
+    public async Task PublishPaidAsync(Payment p, CancellationToken ct)
+    {
+        var result = await broker.PublishAsync("payments", new PublishRequest
+        {
+            MessageType   = "PaymentProcessed.v1",
+            CorrelationId = p.OrderId,
+            Properties    = JsonSerializer.SerializeToElement(new { tenant = p.Tenant }),
+            Payload       = JsonSerializer.SerializeToElement(new { p.PaymentId, p.Amount, p.Currency }),
+        },
+        idempotencyKey: $"payment-{p.PaymentId}-processed", ct: ct);
+
+        // result.MessageId, result.DeliveryCount, result.IsDuplicate (true for a 200 replay)
+    }
+}</code></pre>
+  <p>Errors are raised as <code>BrokerApiException</code>, with <code>StatusCode</code>, <code>ProblemType</code>, <code>Detail</code> and <code>IsTransient</code> (true for 503 and timeouts).</p>
+
+  <h4>With PowerShell or curl</h4>
+<pre><code>curl -X POST https://broker.internal/api/v1/topics/payments/messages \
+  -H "Authorization: ApiKey $BROKER_KEY" -H "Idempotency-Key: payment-PAY-12345-processed" \
+  -H "Content-Type: application/json" \
+  -d '{"messageType":"PaymentProcessed.v1","correlationId":"ORDER-48213","payload":{"paymentId":"PAY-12345","amount":1500}}'</code></pre>
+
+  <h3>3.2 Idempotency and retries</h3>
+  <p>A publish can fail after the broker has stored the message but before you get the answer, for example on a timeout. If you retry without an <code>Idempotency-Key</code>, subscribers receive the message twice. With a key, the retry returns <code>200</code> and the original ID, and nothing is duplicated.</p>
+  <ul>
+    <li>Use a key that identifies the <b>business event</b>, not the HTTP attempt: <code>payment-PAY-12345-processed</code>, or a GUID stored with the event in your outbox. At most 100 characters.</li>
+    <li>Keys are scoped to your application and the topic, so other publishers' keys never clash with yours.</li>
+    <li>Retry only on <code>503</code>, <code>408</code>, timeouts and connection errors, with exponential backoff (for example 1, 2, 4, 8 s… up to a minute). Never retry <code>4xx</code> errors unchanged.</li>
+  </ul>
+
+  <h3>3.3 The outbox pattern (recommended)</h3>
+  <p>If your service writes to its own database and then publishes, a crash between the two steps loses the message. To prevent that, write the message to an <b>outbox table</b> in the <b>same transaction</b> as your business change. A background worker then sends outbox rows to the broker.</p>
+<pre><code>BEGIN TRAN
+  UPDATE Payments SET Status = 'Paid' WHERE PaymentId = @id;
+  INSERT Outbox (OutboxId, Topic, MessageType, CorrelationId, Payload, IdempotencyKey, CreatedAt)
+         VALUES (NEWID(), 'payments', 'PaymentProcessed.v1', @orderId, @json, @key, SYSUTCDATETIME());
+COMMIT
+
+-- Worker loop (every few seconds):
+--   read unsent rows oldest first → POST with the row's IdempotencyKey
+--   201 or 200 → mark the row sent
+--   503 / network error → leave it and try again next pass (same key, so no duplicates)
+--   400/403/404/413 → mark it failed and alert: retrying will not help</code></pre>
+  <p>The broker's <code>samples/SamplePublisher</code> project implements exactly this. While the broker is down, rows wait in the outbox and are sent once it is back, with no duplicates.</p>
+
+  <h3>3.4 Message design</h3>
+  <ul>
+    <li><b>Version the type</b> (<code>PaymentProcessed.v1</code>). For a breaking change, publish a new type (<code>.v2</code>), possibly both for a while, so subscribers can move at their own pace.</li>
+    <li><b>Make the payload self-contained</b> but small: identifiers, the facts that changed, and timestamps. For large documents, put the document in shared storage and send its reference. The payload limit is 256 KB.</li>
+    <li><b>Put routing and diagnostic metadata in <code>properties</code></b> (tenant, region, source). Values must be strings, at most 4 KB in total.</li>
+    <li><b>Do not put secrets or unnecessary personal data in messages.</b> Payloads are stored in the broker database, kept for 14 days after completion (90 days in the DLQ), and visible to the subscribers of the topic.</li>
+    <li><b>Expect out-of-order processing.</b> Include a version number or an "as of" timestamp so subscribers can ignore stale updates.</li>
+    <li><b>Use <code>ttlSeconds</code></b> for messages that become useless after a while, such as a one-time code or a price quote. An undelivered message past its TTL is dead-lettered as <code>Expired</code> instead of being delivered late.</li>
+    <li><b>Set <code>correlationId</code></b> to the ID of the business flow (an order or request ID) and pass it on in any message you publish as a result. The whole flow can then be traced with one query (3.5).</li>
+  </ul>
+
+  <h3>3.5 Tracking what you sent</h3>
+<pre><code>GET /api/v1/messages/{messageId}                  # the publisher that sent it, or an Admin
+GET /api/v1/messages?correlationId=ORDER-48213     # Admin only: every message in the flow</code></pre>
+  <p>The message view shows the overall status (<code>InProgress</code>, <code>Completed</code>, <code>PartiallyDeadLettered</code> or <code>DeadLettered</code>). For each subscription it shows the delivery state and every attempt, with its outcome, HTTP status, duration and error. With .NET, call <code>broker.GetMessageAsync(messageId)</code>.</p>
+
+  <h3>3.6 Publisher checklist</h3>
+  <ul class="check">
+    <li>API key loaded from a secret store; never logged.</li>
+    <li>Every publish has an Idempotency-Key that identifies the business event.</li>
+    <li>Retries only on 503, timeouts and network errors, with backoff and the same key.</li>
+    <li>Outbox table written in the same transaction as the business change.</li>
+    <li><code>messageType</code> versioned; payload under 256 KB with no secrets; <code>correlationId</code> set.</li>
+    <li>Alerting on outbox rows that are stuck or failed.</li>
+  </ul>
+</section>
+
+<!-- ============================== 4 SUBSCRIBER ============================== -->
+<section class="chapter">
+  <h2>4. Subscriber guide</h2>
+
+  <h3>4.1 Choosing a delivery mode</h3>
+  <table>
+    <tr><th style="width:14%">Mode</th><th>How you receive</th><th>Best for</th><th style="width:27%">You need</th></tr>
+    <tr><td><b>Webhook</b></td><td>The broker POSTs each delivery to your HTTPS endpoint. Your HTTP response settles it.</td><td>Web services that already expose HTTPS endpoints; low latency without a long-lived connection.</td><td>A reachable HTTPS endpoint on an allowlisted host; signature verification.</td></tr>
+    <tr><td><b>SignalR</b></td><td>Your app keeps a connection to the broker's hub and gets a <code>Deliver</code> event, then ACKs or NACKs over the connection.</td><td>Apps that cannot expose an endpoint (behind NAT, desktop apps, Blazor Server); real-time UI updates.</td><td>The .NET <code>SignalRDeliveryListener</code> or any SignalR client.</td></tr>
+    <tr><td><b>Pull</b></td><td>Your app asks for deliveries (<code>/receive</code>, optionally long-polling) and ACKs over REST.</td><td>Batch jobs, workers that control their own pace, and scaling out by running more workers.</td><td>A polling loop.</td></tr>
+  </table>
+
+  <h3>4.2 Rules every subscriber follows</h3>
+  <ol>
+    <li><b>Deduplicate on <code>message.messageId</code>.</b> Delivery is at-least-once. Record processed message IDs in your own database, in the <b>same transaction</b> as the work they cause, for example in a <code>ProcessedMessages(MessageId PRIMARY KEY)</code> table. When a message ID is already there, skip the work but still ACK.</li>
+    <li><b>ACK only after your work is committed.</b> If you ACK first and then crash, the message is gone. If you commit first and then crash before the ACK, you get the message again, and rule 1 handles that.</li>
+    <li><b>Settle before <code>lockedUntil</code>.</b> After the lease ends, the broker treats the attempt as failed and redelivers, and your late ACK gets <code>410</code>. For long work, <b>renew</b> the lease.</li>
+    <li><b>NACK to retry, dead-letter to give up.</b> NACK a temporary failure (database busy, a downstream service down), and the broker retries with backoff. NACK with <code>deadLetter: true</code> a message that can never succeed (invalid content, an unknown type). Retrying that would only waste attempts.</li>
+    <li><b>Ignore message types you don't handle,</b> or reject them on purpose. Topics can carry several types, and new versions appear over time. Decide which behaviour you want and make it explicit.</li>
+    <li><b>Never log payloads or keys.</b> Log <code>messageId</code>, <code>correlationId</code>, <code>deliveryId</code> and <code>attempt</code> instead.</li>
+    <li><b>Watch your dead-letter queue</b> (chapter 8). A growing DLQ means something is wrong.</li>
+  </ol>
+<pre><code>// Deduplication: one transaction around the check, the work and the marker
+await using var tx = await db.BeginTransactionAsync(ct);
+if (await db.ExecuteScalarAsync&lt;int&gt;("SELECT COUNT(*) FROM ProcessedMessages WHERE MessageId = @id", new { id }, tx) > 0)
+    return DeliveryResult.Ack;                            // already done: ACK again, do nothing
+await ApplyBusinessChangeAsync(payload, tx);
+await db.ExecuteAsync("INSERT ProcessedMessages (MessageId, ProcessedAt) VALUES (@id, SYSUTCDATETIME())", new { id }, tx);
+await tx.CommitAsync(ct);
+return DeliveryResult.Ack;</code></pre>
+
+  <h3>4.3 The delivery format</h3>
+  <p>All three modes use the same JSON: the webhook request body, the SignalR <code>Deliver</code> event, and each item of the pull <code>/receive</code> response.</p>
+<pre><code>{
+  "deliveryId": 81234,                                   ← use it to ACK, NACK or renew
+  "lockToken":  "2c9a0f4e-5d71-4b0e-9b77-0c4b9a2f1e11",   ← proves you hold the lease
+  "lockedUntil":"2026-10-08T12:31:05.120Z",              ← settle before this (UTC)
+  "attempt":    1,                                       ← 1 on the first try, up to maxAttempts
+  "message": {
+    "messageId":     "01a11b48-b86f-784f-a72d-8e1bc7526202",  ← deduplicate on this
+    "messageType":   "PaymentProcessed.v1",
+    "correlationId": "ORDER-48213",
+    "createdAt":     "2026-10-08T12:30:04.981Z",
+    "properties":    { "tenant": "in-01" },
+    "payload":       { "paymentId": "PAY-12345", "amount": 1500.00, "currency": "INR" }
+  }
+}</code></pre>
+
+  <h3>4.4 Settling: ACK, NACK, dead-letter, renew</h3>
+  <table>
+    <tr><th style="width:15%">Action</th><th>Effect</th><th style="width:38%">How (webhook · SignalR · pull)</th></tr>
+    <tr><td><b>ACK</b></td><td>Delivery completed. It is never delivered again.</td><td>Answer 2xx · return <code>DeliveryResult.Ack</code> or call hub <code>Ack</code> · <code>POST /deliveries/{id}/ack</code></td></tr>
+    <tr><td><b>NACK</b></td><td>Attempt failed. Retried after backoff, or dead-lettered as <code>MaxAttemptsExceeded</code> on the last attempt.</td><td>Answer 4xx/5xx · <code>DeliveryResult.Fail(code, msg)</code> · <code>POST /deliveries/{id}/nack</code></td></tr>
+    <tr><td><b>Dead-letter</b></td><td>Straight to the DLQ as <code>RejectedBySubscriber</code>, with no further attempts.</td><td>REST NACK with <code>deadLetter:true</code> · <code>Fail(code, msg, deadLetter: true)</code> · NACK with <code>deadLetter:true</code></td></tr>
+    <tr><td><b>Renew</b></td><td>Extends the lease by the subscription's lock duration (counted from now).</td><td>REST renew (after a 202) · <code>listener.RenewAsync(delivery)</code> · <code>POST /deliveries/{id}/renew</code></td></tr>
+  </table>
+  <p>NACK and settle bodies carry the lock token, plus optional error details that appear in the attempt history and the DLQ:</p>
+<pre><code>POST /api/v1/deliveries/81234/nack
+{ "lockToken":"2c9a0f4e-…", "errorCode":"InventoryUnavailable", "errorMessage":"Stock service timed out",
+  "errorDetail":"…optional longer text…", "deadLetter": false }</code></pre>
+  <p>A <code>410 Gone</code> on ACK, NACK or renew means <b>the lease was lost</b>. The lease expired, someone else holds the delivery now, or it was already settled. Do <b>not</b> retry. The broker redelivers it if needed, and your deduplication makes that safe.</p>
+
+  <h3>4.5 Retries and backoff</h3>
+  <p>After a failed attempt (a NACK, a failed webhook call or an expired lease), the delivery waits before the next try:</p>
+<pre><code>delay(n) = min(retryBaseDelaySeconds × 2^(n−1), retryMaxDelaySeconds) × random(0.8 … 1.2)
+
+defaults (base 30 s, max 900 s, maxAttempts 4):  attempt 2 after ~30 s, 3 after ~60 s, 4 after ~120 s → then the DLQ</code></pre>
+  <p>Ask the administrator for settings that match your recovery time. If a downstream system can be down for an hour, the retry budget should cover an hour. For example, <code>maxAttempts</code> 10 with base 30 s and max 900 s spans about 1.5 hours.</p>
+</section>
+
+<!-- ============================== 5 WEBHOOK ============================== -->
+<section class="chapter">
+  <h2>5. Webhook subscribers</h2>
+  <p>The broker sends each delivery as an HTTPS <code>POST</code> to your subscription's <code>webhookUrl</code>, with the delivery JSON (4.3) as the body. Up to <code>maxConcurrentDeliveries</code> calls (default 8) are in flight at once for your subscription.</p>
+
+  <h3>5.1 Requirements for your endpoint</h3>
+  <ul>
+    <li>HTTPS, on a host the administrator has added to the webhook allowlist.</li>
+    <li>Answers within <code>webhookTimeoutSeconds</code> (default 30 s, always shorter than the lock duration). Otherwise the call counts as a <code>Timeout</code> failure.</li>
+    <li><b>Verifies the signature</b> before doing anything with the body (5.3).</li>
+    <li>Does not redirect. A 3xx answer is not followed and counts as a failure.</li>
+    <li>Is idempotent (4.2): the same delivery can arrive again.</li>
+  </ul>
+
+  <h3>5.2 Request headers</h3>
+  <table>
+    <tr><th style="width:30%">Header</th><th>Content</th></tr>
+    <tr><td><code>X-Broker-Delivery-Id</code></td><td>The delivery ID (also in the body).</td></tr>
+    <tr><td><code>X-Broker-Lock-Token</code></td><td>The lock token, needed to ACK later after a 202.</td></tr>
+    <tr><td><code>X-Broker-Attempt</code></td><td>The attempt number.</td></tr>
+    <tr><td><code>X-Broker-Timestamp</code></td><td>Unix time in seconds when the request was signed.</td></tr>
+    <tr><td><code>X-Broker-Signature</code></td><td><code>sha256=&lt;hex&gt;</code>, or two comma-separated signatures during a secret rotation.</td></tr>
+  </table>
+
+  <h3>5.3 Verifying the signature</h3>
+  <p>The signature is <b>HMAC-SHA256</b> with your webhook secret as the key, over the string <code>timestamp + "." + rawBody</code>, written as lowercase hex with the prefix <code>sha256=</code>. To verify a request:</p>
+  <ol>
+    <li>Read the <b>raw</b> request body as text, exactly as received, before any JSON parsing.</li>
+    <li>Reject the request if <code>X-Broker-Timestamp</code> is more than 5 minutes from your clock. This stops replays.</li>
+    <li>Compute <code>"sha256=" + hex(HMAC_SHA256(secret, timestamp + "." + body))</code>.</li>
+    <li>Compare it in constant time with <b>each</b> comma-separated value in <code>X-Broker-Signature</code>, and accept if any one matches.</li>
+    <li>If none matches, answer <code>401</code> and do not process the request.</li>
+  </ol>
+<pre><code>// .NET: the Contracts package does all of the above
+app.MapPost("/webhooks/payments", async (HttpRequest request, IPaymentHandler handler) =>
+{
+    using var reader = new StreamReader(request.Body);
+    var body = await reader.ReadToEndAsync();
+    if (!WebhookSignature.Verify(
+            request.Headers[WebhookHeaders.Signature], request.Headers[WebhookHeaders.Timestamp],
+            body, DateTimeOffset.UtcNow, secrets))          // secrets: current (and old, during rotation)
+        return Results.Unauthorized();
+
+    var delivery = JsonSerializer.Deserialize&lt;Delivery&gt;(body, JsonSerializerOptions.Web)!;
+    return await handler.HandleAsync(delivery) switch
+    {
+        Outcome.Done      => Results.Ok(),                     // ACK (also for an already-processed duplicate)
+        Outcome.TryLater  => Results.StatusCode(503),          // NACK: retried with backoff
+        Outcome.Invalid   => Results.UnprocessableEntity(),    // NACK; or REST NACK with deadLetter (5.4)
+    };
+});</code></pre>
+<pre><code># Python equivalent of the check
+import hmac, hashlib, time
+def verify(sig_header, ts, raw_body: bytes, secrets):
+    if abs(time.time() - int(ts)) > 300: return False
+    msg = ts.encode() + b"." + raw_body
+    expected = ["sha256=" + hmac.new(s.encode(), msg, hashlib.sha256).hexdigest() for s in secrets]
+    return any(hmac.compare_digest(e, p.strip()) for e in expected for p in sig_header.split(","))</code></pre>
+
+  <h3>5.4 How your response is treated</h3>
+  <table>
+    <tr><th style="width:26%">Your response</th><th>Broker treats it as</th></tr>
+    <tr><td><code>200</code>–<code>299</code> (except 202)</td><td><b>ACK</b>: the delivery is completed.</td></tr>
+    <tr><td><code>202 Accepted</code></td><td><b>Hold</b>: you have taken the work and will settle it yourself through REST, using the lock token from the headers, before <code>lockedUntil</code>. Renew if you need longer. With no ACK, the lease expires and the delivery is redelivered.</td></tr>
+    <tr><td><code>3xx</code></td><td>NACK (<code>Http3xx</code>). Redirects are not followed.</td></tr>
+    <tr><td><code>4xx</code>, <code>5xx</code></td><td>NACK (<code>Http&lt;status&gt;</code>), retried with backoff. Up to 2,000 characters of your response body are kept in the attempt history, so return a short, useful error and no sensitive data.</td></tr>
+    <tr><td>No answer within the timeout</td><td>NACK (<code>Timeout</code>).</td></tr>
+    <tr><td>Connection refused, DNS or TLS error</td><td>NACK (<code>ConnectionError</code>).</td></tr>
+  </table>
+  <p>An HTTP response cannot dead-letter a message by itself. To reject one permanently, answer <code>202</code> and then send <code>POST /api/v1/deliveries/{id}/nack</code> with <code>"deadLetter": true</code> and the lock token from the headers. Your application's API key needs Receive on the subscription, which the owner has.</p>
+<pre><code>// 202 + asynchronous settle (long work, or permanent rejection)
+var deliveryId = long.Parse(request.Headers[WebhookHeaders.DeliveryId]!);
+var lockToken  = Guid.Parse(request.Headers[WebhookHeaders.LockToken]!);
+_ = queue.EnqueueAsync(delivery);           // your worker later calls:
+// POST /api/v1/deliveries/{deliveryId}/ack   {"lockToken":"…"}      or  /nack {"lockToken":"…","deadLetter":true,…}
+return Results.Accepted();</code></pre>
+
+  <h3>5.5 Circuit breaker</h3>
+  <p>If your endpoint fails 5 times in a row (any non-2xx status, timeout or connection error), the broker <b>opens a circuit</b> for your subscription and stops calling for 60 seconds. No attempts are used up meanwhile, and messages simply wait. It then makes one trial call. If the trial succeeds, delivery resumes at full speed. This protects your service while it recovers, and it never affects other subscriptions.</p>
+
+  <h3>5.6 Webhook secret rotation</h3>
+  <p>When the administrator rotates your secret (<code>POST /api/v1/subscriptions/{id}/webhook-secret</code>), you receive the new secret. For the next <b>24 hours</b>, every request carries two signatures, made with the new and the old secret. Configure your endpoint to accept both secrets, deploy the new one, then remove the old one before the 24 hours are up.</p>
+</section>
+
+<!-- ============================== 6 SIGNALR ============================== -->
+<section class="chapter">
+  <h2>6. SignalR subscribers</h2>
+  <p>Your application opens a SignalR connection to the broker's hub at <code>/hubs/deliveries</code> and <b>subscribes</b> to one or more subscriptions. The broker pushes each delivery to <b>exactly one</b> connected client of that subscription. With several clients (several instances of your app), deliveries are shared round-robin. When no client is connected, nothing is handed out, and messages wait in the broker.</p>
+
+  <h3>6.1 Using the .NET listener (recommended)</h3>
+  <p><code>SignalRDeliveryListener</code> handles connecting, authentication, subscribing, ACK and NACK from your handler's result, and reconnecting forever after a network drop or a broker restart (it retries at 0, 2, 5 and 10 s, then every 30 s, and subscribes again by itself).</p>
+<pre><code>await using var listener = new SignalRDeliveryListener(
+    new Uri("https://broker.internal/"), apiKey,
+    async (delivery, ct) =>
+    {
+        if (delivery.Message.MessageType != "PaymentProcessed.v1")
+            return DeliveryResult.Fail("UnknownType", delivery.Message.MessageType, deadLetter: true);
+        try
+        {
+            await ProcessIdempotentlyAsync(delivery, ct);     // dedupe on delivery.Message.MessageId
+            return DeliveryResult.Ack;
+        }
+        catch (DbException ex)
+        {
+            return DeliveryResult.Fail("DatabaseBusy", ex.Message); // retried with backoff
+        }
+    });
+
+listener.SettlementFailed += (d, ex) => logger.LogWarning("Could not settle {DeliveryId}: {Error}", d.DeliveryId, ex.Message);
+await listener.StartAsync([subscriptionId], stoppingToken);</code></pre>
+  <ul>
+    <li>An exception thrown by your handler is treated as a NACK (retry).</li>
+    <li>Handlers run concurrently. The broker never sends more than <code>maxConcurrentDeliveries</code> unsettled deliveries (default 8) to your subscription.</li>
+    <li>For work that may outlast the lease, call <code>await listener.RenewAsync(delivery)</code>. It returns the new <code>lockedUntil</code>.</li>
+    <li>Host it in a <code>BackgroundService</code>. The broker samples include <code>SignalRSubscriberWorker</code>, which also retries the first connection while the broker is starting.</li>
+    <li>In Blazor Server, raise an event from the handler and call <code>InvokeAsync(StateHasChanged)</code> in components. <code>samples/BlazorSubscriber</code> shows toast notifications built this way.</li>
+  </ul>
+
+  <h3>6.2 Using any SignalR client</h3>
+  <table>
+    <tr><th style="width:24%">Item</th><th>Detail</th></tr>
+    <tr><td>URL</td><td><code>https://&lt;broker&gt;/hubs/deliveries</code></td></tr>
+    <tr><td>Authentication</td><td>Your API key as the access token. Clients send it as the <code>access_token</code> query parameter (for example the JavaScript client's <code>accessTokenFactory</code>), and the broker redacts it from logs.</td></tr>
+    <tr><td>Server → client</td><td><code>Deliver(delivery)</code>, carrying the JSON from 4.3.</td></tr>
+    <tr><td>Client → server</td><td><code>Subscribe(subscriptionId)</code>, <code>Unsubscribe(subscriptionId)</code>, <code>Ack(deliveryId, lockToken)</code>, <code>Nack(deliveryId, lockToken, errorCode, errorMessage, deadLetter)</code>, and <code>Renew(deliveryId, lockToken)</code>, which returns the new <code>lockedUntil</code>.</td></tr>
+    <tr><td>Errors</td><td>A failed call raises a hub error whose message starts with the kind: <code>Forbidden:</code>, <code>NotFound:</code>, <code>Conflict:</code>, <code>LeaseLost:</code> or <code>Validation:</code>.</td></tr>
+    <tr><td>After reconnecting</td><td><b>Call Subscribe again</b> for every subscription. The broker does not remember connections across a disconnect or restart.</td></tr>
+  </table>
+<pre><code>// JavaScript (@microsoft/signalr)
+const conn = new signalR.HubConnectionBuilder()
+  .withUrl("https://broker.internal/hubs/deliveries", { accessTokenFactory: () => apiKey })
+  .withAutomaticReconnect([0, 2000, 5000, 10000, 30000]).build();
+conn.on("Deliver", async d => {
+  try { await handle(d); await conn.invoke("Ack", d.deliveryId, d.lockToken); }
+  catch (e) { await conn.invoke("Nack", d.deliveryId, d.lockToken, "HandlerError", String(e), false); }
+});
+conn.onreconnected(() => conn.invoke("Subscribe", subscriptionId));
+await conn.start(); await conn.invoke("Subscribe", subscriptionId);</code></pre>
+  <div class="note"><b>If your client disconnects</b> while holding deliveries, they are redelivered after their lease expires. That can be to another instance, or to the same one after it reconnects.</div>
+</section>
+
+<!-- ============================== 7 PULL ============================== -->
+<section class="chapter">
+  <h2>7. Pull subscribers</h2>
+  <p>Your worker asks for deliveries when it is ready for them, so you control the pace completely. Run more workers to process faster, because each delivery is leased to only one of them.</p>
+
+  <h3>7.1 Receiving</h3>
+<pre><code>POST /api/v1/subscriptions/{subscriptionId}/receive
+{ "maxMessages": 16, "waitSeconds": 20 }
+
+200 OK  →  [ {delivery}, {delivery}, … ]      (an empty list when nothing arrived in time)</code></pre>
+  <ul>
+    <li><code>maxMessages</code> is 1–32 (default 1). <code>waitSeconds</code> is 0–30 (default 0, which returns at once). Values out of range are clamped.</li>
+    <li>With <code>waitSeconds</code> above 0 the call <b>long-polls</b>: it returns as soon as a message is published, or empty after the wait. Use 10–30 s so an idle worker is quiet and still reacts at once.</li>
+    <li>Deliveries come oldest first. Paused subscriptions, deliveries that are not due yet (backoff) and expired deliveries are skipped.</li>
+    <li>Every delivery in the batch has its own lease. Settle each one separately.</li>
+  </ul>
+
+  <h3>7.2 Settling</h3>
+<pre><code>POST /api/v1/deliveries/{deliveryId}/ack     {"lockToken":"…"}                                   → 204
+POST /api/v1/deliveries/{deliveryId}/nack    {"lockToken":"…","errorCode":"…","errorMessage":"…",
+                                              "deadLetter":false}                                  → 204
+POST /api/v1/deliveries/{deliveryId}/renew   {"lockToken":"…"}                                   → 204
+                                               (any of them → 410 when the lease was lost)</code></pre>
+
+  <h3>7.3 A worker loop (.NET)</h3>
+<pre><code>protected override async Task ExecuteAsync(CancellationToken stop)
+{
+    while (!stop.IsCancellationRequested)
+    {
+        IReadOnlyList&lt;Delivery&gt; batch;
+        try { batch = await broker.ReceiveAsync(subscriptionId, maxMessages: 16, waitSeconds: 20, stop); }
+        catch (BrokerApiException ex) when (ex.IsTransient) { await Task.Delay(5000, stop); continue; }
+
+        foreach (var delivery in batch)
+        {
+            try
+            {
+                await ProcessIdempotentlyAsync(delivery, stop);          // dedupe on Message.MessageId
+                await broker.AckAsync(delivery, stop);
+            }
+            catch (InvalidMessageException ex)
+            {
+                await broker.NackAsync(delivery, "Invalid", ex.Message, deadLetter: true, stop);
+            }
+            catch (BrokerApiException ex) when (ex.IsLeaseLost)
+            {
+                // lease expired while working: it will be redelivered; deduplication makes that safe
+            }
+            catch (Exception ex)
+            {
+                await broker.NackAsync(delivery, "ProcessingFailed", ex.Message, ct: stop);
+            }
+        }
+    }
+}</code></pre>
+  <div class="tip"><b>Size the batch to the lease.</b> All deliveries in a batch must be settled before <code>lockedUntil</code>. If one batch takes longer than the lock duration (default 60 s), ask for fewer messages, process them in parallel, or renew.</div>
+</section>
+
+<!-- ============================== 8 DLQ & TROUBLESHOOTING ============================== -->
+<section class="chapter">
+  <h2>8. Dead letters and troubleshooting</h2>
+
+  <h3>8.1 Reading your dead-letter queue</h3>
+<pre><code>GET /api/v1/subscriptions/{subscriptionId}/deadletters?pageSize=50
+GET /api/v1/subscriptions/{subscriptionId}/deadletters?pageSize=50&amp;before={nextBefore}   # next page
+GET …/deadletters?includeRequeued=true                                                  # history too</code></pre>
+  <p>Entries come newest first. Each one shows the <code>reason</code>, the attempt count, <code>lastError</code>, the first and last failure times, and the full message. Owners (Receive permission) and Admins can read it.</p>
+  <table>
+    <tr><th style="width:24%">Reason</th><th>Cause</th><th style="width:36%">Typical fix</th></tr>
+    <tr><td><code>MaxAttemptsExceeded</code></td><td>Every attempt failed (NACK, error status, timeout, expired lease).</td><td>Fix the bug or outage, then ask for a requeue.</td></tr>
+    <tr><td><code>RejectedBySubscriber</code></td><td>You NACKed it with <code>deadLetter: true</code>.</td><td>Requeue only after your code changed to accept it, or ask the publisher to correct and republish.</td></tr>
+    <tr><td><code>Expired</code></td><td>Its time-to-live passed before it could be delivered.</td><td>Usually leave it. A requeue would deliver stale data.</td></tr>
+  </table>
+
+  <h3>8.2 Getting a message requeued</h3>
+  <p>Only an administrator can requeue (<code>POST /api/v1/deadletters/{deliveryId}/requeue</code>). Send them the subscription, the delivery IDs and confirmation that the cause is fixed. A requeued delivery starts with a fresh retry budget (its attempt number starts at 1 again), while the message history keeps every earlier attempt. In Phase 1 entries are requeued one at a time.</p>
+
+  <h3>8.3 Errors and what to do</h3>
+  <p>Errors use RFC 9457 problem details (<code>application/problem+json</code>) with a <code>type</code>, a <code>title</code> and a <code>detail</code>. Validation errors also list each failing field.</p>
+  <table>
+    <tr><th style="width:9%">Status</th><th style="width:30%">Problem type (urn:message-broker:problem:…)</th><th>Meaning</th><th style="width:28%">Action</th></tr>
+    <tr><td>400</td><td><code>validation</code></td><td>The request is invalid; see the field errors.</td><td>Fix the request.</td></tr>
+    <tr><td>401</td><td><code>unauthorized</code></td><td>Missing, unknown, deactivated or expired key.</td><td>Check the key and its expiry.</td></tr>
+    <tr><td>403</td><td><code>forbidden</code></td><td>Valid key, but no permission for this topic or subscription.</td><td>Ask the administrator.</td></tr>
+    <tr><td>404</td><td><code>not-found</code></td><td>Unknown topic, subscription, delivery or message.</td><td>Check the name or ID.</td></tr>
+    <tr><td>409</td><td><code>conflict</code></td><td>The state does not allow it (for example a duplicate name, or requeueing something not in the DLQ).</td><td>Read the detail.</td></tr>
+    <tr><td>410</td><td><code>lease-lost</code></td><td>The lease ended, or the token is stale.</td><td>Do not retry; it will be redelivered.</td></tr>
+    <tr><td>413</td><td><code>payload-too-large</code></td><td>Payload over 256 KB. (Properties over 4 KB give a 400.)</td><td>Send a reference instead.</td></tr>
+    <tr><td>503</td><td><code>unavailable</code></td><td>Temporary store problem.</td><td>Retry with backoff (publishers: same key).</td></tr>
+  </table>
+
+  <h4>Common problems</h4>
+  <table>
+    <tr><th style="width:34%">Symptom</th><th>Likely cause</th></tr>
+    <tr><td>Webhook never called</td><td>Subscription paused; circuit open after repeated failures; the host was removed from the allowlist; the message was published before the subscription existed.</td></tr>
+    <tr><td>Signature never verifies</td><td>The body was re-serialized instead of verifying the raw text; wrong or old secret; server clock more than 5 minutes off.</td></tr>
+    <tr><td>Same message processed twice</td><td>Expected with at-least-once delivery. Add deduplication on <code>messageId</code> (4.2).</td></tr>
+    <tr><td>ACK returns 410</td><td>Processing took longer than the lock duration. Renew, use smaller batches, or ask for a longer lock (up to 600 s).</td></tr>
+    <tr><td>SignalR client connected but receives nothing</td><td><code>Subscribe</code> was not called (again) after connecting; the subscription is not in SignalR mode; the key lacks Receive.</td></tr>
+    <tr><td>Messages dead-lettered as Expired</td><td>The subscriber was down or paused longer than the message TTL.</td></tr>
+  </table>
+  <p>To investigate a message, ask the publisher or an administrator to look it up with <code>GET /api/v1/messages/{messageId}</code>. It shows every attempt on every subscription, with the error codes your side returned.</p>
+</section>
+
+<!-- ============================== 9 REFERENCE ============================== -->
+<section class="chapter">
+  <h2>9. Reference</h2>
+
+  <h3>9.1 Subscription settings</h3>
+  <p>Set by the administrator when creating or changing the subscription (<code>PATCH /api/v1/subscriptions/{id}</code>). Settings left out take the broker defaults.</p>
+  <table>
+    <tr><th style="width:28%">Setting</th><th style="width:12%">Default</th><th style="width:18%">Allowed</th><th>Notes</th></tr>
+    <tr><td><code>deliveryMode</code></td><td>—</td><td>Webhook, SignalR, Pull</td><td>Cannot be changed later; create a new subscription instead.</td></tr>
+    <tr><td><code>webhookUrl</code></td><td>—</td><td>HTTPS, allowlisted host</td><td>Webhook mode only.</td></tr>
+    <tr><td><code>webhookTimeoutSeconds</code></td><td>30</td><td>≥ 1, &lt; lock duration</td><td>Webhook mode only.</td></tr>
+    <tr><td><code>lockDurationSeconds</code></td><td>60</td><td>1–600</td><td>How long you have to settle a delivery.</td></tr>
+    <tr><td><code>maxAttempts</code></td><td>4</td><td>1–100</td><td>Attempts before the DLQ.</td></tr>
+    <tr><td><code>retryBaseDelaySeconds</code></td><td>30</td><td>≥ 1</td><td>First retry delay (4.5).</td></tr>
+    <tr><td><code>retryMaxDelaySeconds</code></td><td>900</td><td>base – 86,400</td><td>Cap on the retry delay.</td></tr>
+    <tr><td><code>maxConcurrentDeliveries</code></td><td>8</td><td>1–256</td><td>Webhook calls in flight, or unsettled SignalR deliveries.</td></tr>
+    <tr><td><code>ttlSeconds</code></td><td>none</td><td>&gt; 0</td><td>Expiry for this subscription's deliveries. The earlier of this and the message TTL applies.</td></tr>
+    <tr><td><code>status</code></td><td>Active</td><td>Active, Paused</td><td>While Paused, messages queue but nothing is delivered, and TTLs keep running.</td></tr>
+  </table>
+
+  <h3>9.2 Limits</h3>
+  <table>
+    <tr><th>Item</th><th>Limit</th></tr>
+    <tr><td>Payload</td><td>256 KB of JSON</td></tr>
+    <tr><td>Properties</td><td>JSON object of string values, 4 KB</td></tr>
+    <tr><td>messageType / correlationId / Idempotency-Key</td><td>200 / 100 / 100 characters</td></tr>
+    <tr><td>Names (topic, subscription, application)</td><td><code>[A-Za-z0-9._-]</code>, 1–100 characters, unique ignoring case</td></tr>
+    <tr><td>Pull batch / long-poll wait</td><td>32 messages / 30 seconds</td></tr>
+    <tr><td>Active API keys per application</td><td>2</td></tr>
+    <tr><td>Webhook signature timestamp tolerance</td><td>5 minutes</td></tr>
+    <tr><td>Retention</td><td>Completed work 14 days; dead letters 90 days</td></tr>
+    <tr><td>Target throughput (Phase 1)</td><td>100 messages/s sustained; publish p95 under 100 ms; delivery under 1 s at normal load</td></tr>
+  </table>
+
+  <h3>9.3 Endpoints</h3>
+  <table>
+    <tr><th style="width:44%">Endpoint</th><th>Purpose</th><th style="width:20%">Who</th></tr>
+    <tr><td><code>POST /api/v1/topics/{name}/messages</code></td><td>Publish</td><td>Publish permission</td></tr>
+    <tr><td><code>GET /api/v1/messages/{messageId}</code></td><td>Message history</td><td>Its publisher, Admin</td></tr>
+    <tr><td><code>GET /api/v1/messages?correlationId=</code></td><td>Messages of a flow</td><td>Admin</td></tr>
+    <tr><td><code>POST /api/v1/subscriptions/{id}/receive</code></td><td>Pull deliveries</td><td>Receive</td></tr>
+    <tr><td><code>POST /api/v1/deliveries/{id}/ack | nack | renew</code></td><td>Settle or extend</td><td>Receive</td></tr>
+    <tr><td><code>GET /api/v1/subscriptions/{id}/deadletters</code></td><td>Read the DLQ</td><td>Receive, Admin</td></tr>
+    <tr><td><code>POST /api/v1/deadletters/{deliveryId}/requeue</code></td><td>Requeue</td><td>Admin</td></tr>
+    <tr><td><code>/hubs/deliveries</code> (SignalR)</td><td>Push channel</td><td>Receive</td></tr>
+    <tr><td><code>/api/v1/topics…</code>, <code>/api/v1/subscriptions…</code></td><td>Topics and subscriptions</td><td>Admin</td></tr>
+    <tr><td><code>/api/v1/admin/…</code></td><td>Applications, keys, permissions, webhook hosts</td><td>Admin</td></tr>
+    <tr><td><code>GET /health/live</code>, <code>/health/ready</code></td><td>Liveness and readiness</td><td>Anyone</td></tr>
+  </table>
+  <p class="small">The OpenAPI description is served by the broker (<code>/openapi/v1.json</code>) for code generation in other languages.</p>
+
+  <h3>9.4 Subscriber checklist</h3>
+  <ul class="check">
+    <li>API key (and webhook secret) loaded from a secret store; never logged.</li>
+    <li>Deduplication on <code>messageId</code> in the same transaction as the work.</li>
+    <li>ACK only after commit; NACK temporary failures; dead-letter invalid messages.</li>
+    <li>Work finishes well inside the lock duration, or renews the lease; 410 handled without retrying.</li>
+    <li>Webhook: HTTPS on an allowlisted host; raw-body signature check that accepts two secrets; answers within the timeout; no redirects.</li>
+    <li>SignalR: Subscribe again after every reconnect (automatic with <code>SignalRDeliveryListener</code>).</li>
+    <li>Pull: long-poll; batch size matched to the lease; transient errors retried with backoff.</li>
+    <li>Unknown message types handled on purpose (ignore with ACK, or dead-letter).</li>
+    <li>Retry settings agreed with the administrator to cover your expected outages.</li>
+    <li>Dead-letter queue monitored, with an owner who acts on it.</li>
+  </ul>
+
+  <h3>9.5 Glossary</h3>
+  <table>
+    <tr><td style="width:24%"><b>ACK / NACK</b></td><td>Acknowledge success, or report failure, for one delivery.</td></tr>
+    <tr><td><b>At-least-once</b></td><td>Every message is delivered, possibly more than once; the receiver deduplicates.</td></tr>
+    <tr><td><b>Backoff</b></td><td>The growing wait between retries.</td></tr>
+    <tr><td><b>Circuit breaker</b></td><td>A pause in webhook calls after repeated failures, to protect a struggling endpoint.</td></tr>
+    <tr><td><b>Idempotency-Key</b></td><td>A publisher-chosen key that makes repeating a publish safe.</td></tr>
+    <tr><td><b>Lease / lock token</b></td><td>Temporary exclusive ownership of a delivery, and the token proving it.</td></tr>
+    <tr><td><b>Outbox</b></td><td>A table in the publisher's database holding messages to send, written in the same transaction as the business change.</td></tr>
+    <tr><td><b>TTL</b></td><td>Time-to-live: how long a message stays worth delivering.</td></tr>
+  </table>
+</section>
+
+</body>
+</html>
