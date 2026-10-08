@@ -18,7 +18,10 @@ BEGIN
     SELECT
         (SELECT COUNT_BIG(*) FROM broker.Deliveries WHERE Status = 0) AS PendingCount,
         (SELECT COUNT_BIG(*) FROM broker.Deliveries WHERE Status = 1) AS LeasedCount,
-        (SELECT COUNT_BIG(*) FROM broker.DeadLetters WHERE RequeuedAt IS NULL) AS DeadLetteredCount,
+        -- Only live subscriptions: a deleted one's DLQ entries can no longer be requeued.
+        (SELECT COUNT_BIG(*) FROM broker.DeadLetters dl
+         JOIN broker.Subscriptions s ON s.SubscriptionId = dl.SubscriptionId
+         WHERE dl.RequeuedAt IS NULL AND s.Status <> 'Deleted') AS DeadLetteredCount,
         (SELECT COUNT_BIG(*) FROM broker.Messages WHERE CreatedAt >= @Start) AS PublishedInWindow,
         (SELECT COUNT_BIG(*) FROM broker.Deliveries WHERE Status = 2 AND CompletedAt >= @Start) AS CompletedInWindow,
         @WindowMinutes AS WindowMinutes,
@@ -134,7 +137,8 @@ END
 GO
 
 -- Broker-wide DLQ, newest first; keyset paging on DeadLetterId like usp_DeadLetter_List. The payload
--- is left out: the message detail page shows it.
+-- is left out: the message detail page shows it. Entries of deleted subscriptions are left out too:
+-- they cannot be requeued (usp_DeadLetter_Requeue refuses them), so there is nothing to act on.
 CREATE OR ALTER PROCEDURE broker.usp_Admin_DeadLetter_Search
     @TopicId         uniqueidentifier = NULL,
     @SubscriptionId  uniqueidentifier = NULL,
@@ -159,8 +163,9 @@ BEGIN
            DeadLetterId, DeliveryId, MessageId, SubscriptionId, SubscriptionName, TopicId, TopicName, Reason,
            AttemptCount, LastError, FirstFailureAt, LastFailureAt, DeadLetteredAt, RequeuedAt, RequeuedBy,
            MessageType, CorrelationId, MessageCreatedAt
-    FROM broker.vw_DeadLetterDetails
-    WHERE (@TopicId IS NULL OR TopicId = @TopicId)
+    FROM broker.vw_DeadLetterDetails d
+    WHERE EXISTS (SELECT 1 FROM broker.Subscriptions s WHERE s.SubscriptionId = d.SubscriptionId AND s.Status <> 'Deleted')
+      AND (@TopicId IS NULL OR TopicId = @TopicId)
       AND (@SubscriptionId IS NULL OR SubscriptionId = @SubscriptionId)
       AND (@Reason IS NULL OR Reason = @Reason)
       AND (@From IS NULL OR DeadLetteredAt >= @From)
