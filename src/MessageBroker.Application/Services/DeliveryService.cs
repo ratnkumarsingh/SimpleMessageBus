@@ -18,6 +18,7 @@ public sealed class DeliveryService(
     LongPoller poller,
     IDispatcherSignal signal,
     IDeliverySettlements settlements,
+    IBrokerActivityFeed activity,
     ILogger<DeliveryService> logger)
 {
     public const int DefaultDeadLetterPageSize = 50;
@@ -33,6 +34,7 @@ public sealed class DeliveryService(
 
         foreach (var d in leased)
         {
+            activity.DeliveryChanged(d.MessageId, d.DeliveryId);
             using var scope = logger.BeginScope(new Dictionary<string, object>
             {
                 ["MessageId"] = d.MessageId,
@@ -49,8 +51,9 @@ public sealed class DeliveryService(
     /// <exception cref="BrokerException">LeaseLost (410) when the token is stale or the lease expired.</exception>
     public async Task AckAsync(Caller caller, long deliveryId, AckRequest request, CancellationToken ct)
     {
-        await deliveries.AckAsync(deliveryId, request.LockToken, caller.AppId, ct: ct);
+        var messageId = await deliveries.AckAsync(deliveryId, request.LockToken, caller.AppId, ct: ct);
         settlements.Settled(deliveryId);
+        activity.DeliveryChanged(messageId, deliveryId);
         logger.LogInformation("Delivery {DeliveryId} acknowledged by {AppId}", deliveryId, caller.AppId);
     }
 
@@ -59,6 +62,7 @@ public sealed class DeliveryService(
         var result = await deliveries.NackAsync(deliveryId, request.LockToken, caller.AppId,
             new FailureDetails(request.ErrorCode, request.ErrorMessage, request.ErrorDetail, DeadLetter: request.DeadLetter), ct);
         settlements.Settled(deliveryId);
+        activity.DeliveryChanged(result.MessageId, deliveryId);
 
         if (result.DeadLettered)
             logger.LogWarning("Delivery {DeliveryId} dead-lettered after NACK from {AppId}: {ErrorCode}", deliveryId, caller.AppId, request.ErrorCode);
@@ -106,7 +110,8 @@ public sealed class DeliveryService(
     public async Task RequeueAsync(Caller caller, long deliveryId, CancellationToken ct)
     {
         caller.RequireAdmin();
-        await deliveries.RequeueAsync(deliveryId, caller.AppId, ct);
+        var messageId = await deliveries.RequeueAsync(deliveryId, caller.AppId, ct);
+        activity.DeliveryChanged(messageId, deliveryId);
         logger.LogInformation("Delivery {DeliveryId} requeued from the DLQ by {AppId}", deliveryId, caller.AppId);
         signal.Notify();
     }

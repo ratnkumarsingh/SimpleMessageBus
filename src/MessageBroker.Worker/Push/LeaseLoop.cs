@@ -19,6 +19,7 @@ public sealed class LeaseLoop(
     IDeliveryRepository deliveries,
     IEnumerable<IPushChannel> channels,
     IDispatcherSignal published,
+    IBrokerActivityFeed activity,
     IOptions<BrokerOptions> options,
     TimeProvider time,
     ILogger<LeaseLoop> logger) : BackgroundService
@@ -91,7 +92,10 @@ public sealed class LeaseLoop(
 
             var leased = await deliveries.LeaseAsync(subscription.SubscriptionId, capacity, channel.Mode, appId: null, ct);
             foreach (var delivery in leased)
+            {
+                activity.DeliveryChanged(delivery.MessageId, delivery.DeliveryId);
                 started.Add(Track(RunDeliveryAsync(channel, subscription, delivery, ct)));
+            }
         }
 
         if (waitForDeliveries)

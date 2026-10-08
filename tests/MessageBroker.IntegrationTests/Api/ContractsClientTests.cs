@@ -53,4 +53,41 @@ public sealed class ContractsClientTests(SqlServerFixture sql) : ApiTest(sql)
         var forbidden = await Assert.ThrowsAsync<BrokerApiException>(() => subscriber.PublishAsync(topic.Name, request));
         Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
     }
+
+    [Fact(DisplayName = "K02 Contracts BrokerClient admin reads: overview, message and DLQ search, requeue, topology")]
+    public async Task K02_AdminReads()
+    {
+        var (topic, publisher, subscriber) = await ArrangeTopicAsync();
+        var subscription = await CreateSubscriptionAsync(topic.TopicId, subscriber, maxAttempts: 1);
+        var messageId = (await PublishAsync(topic.Name, publisher, correlationId: "K02")).MessageId;
+        var leased = Assert.Single(await Deliveries.LeaseAsync(subscription.SubscriptionId, 1, "Pull", subscriber));
+        await Deliveries.NackAsync(leased.DeliveryId, leased.LockToken, subscriber, new("E", "fail"));
+        var admin = BrokerClient.Create(Api.CreateClient(), ApiFactory.AdminKey);
+
+        var overview = await admin.GetOverviewAsync(30);
+        Assert.Equal((30, 1L), (overview.Totals.WindowMinutes, overview.Totals.DeadLettered));
+
+        var search = await admin.SearchMessagesAsync(new MessageSearchRequest
+        {
+            TopicId = topic.TopicId, Status = "DeadLettered", CorrelationId = "K02",
+            From = DateTime.UtcNow.AddHours(-1), To = DateTime.UtcNow.AddHours(1), PageSize = 10,
+        });
+        Assert.Equal(messageId, Assert.Single(search.Items).MessageId);
+        Assert.Null(search.NextCursor);
+        Assert.Equal(messageId, Assert.Single(await admin.ListMessagesByCorrelationAsync("K02")).MessageId);
+
+        var dlq = await admin.SearchDeadLettersAsync(new DeadLetterSearchRequest { SubscriptionId = subscription.SubscriptionId, Reason = "MaxAttemptsExceeded" });
+        Assert.Equal(leased.DeliveryId, Assert.Single(dlq.Items).DeliveryId);
+        await admin.RequeueDeadLetterAsync(leased.DeliveryId);
+        Assert.Empty((await admin.SearchDeadLettersAsync(new DeadLetterSearchRequest())).Items);
+        Assert.Single((await admin.SearchDeadLettersAsync(new DeadLetterSearchRequest { IncludeRequeued = true })).Items);
+
+        Assert.Contains(await admin.ListTopicsAsync(), t => t.TopicId == topic.TopicId);
+        Assert.Equal(subscription.SubscriptionId, Assert.Single(await admin.ListSubscriptionsAsync(topic.TopicId)).SubscriptionId);
+        Assert.Contains(await admin.ListApplicationsAsync(), a => a.AppId == publisher);
+        Assert.Contains(await admin.ListPermissionsAsync(publisher), p => p.ResourceId == topic.TopicId && p.Permission == "Publish");
+
+        var error = await Assert.ThrowsAsync<BrokerApiException>(() => admin.SearchMessagesAsync(new MessageSearchRequest { PageSize = 0 }));
+        Assert.Equal((HttpStatusCode.BadRequest, ProblemTypes.Validation), (error.StatusCode, error.ProblemType));
+    }
 }

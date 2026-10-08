@@ -1,4 +1,5 @@
 using MessageBroker.Application;
+using MessageBroker.Application.Dispatch;
 using MessageBroker.Application.Persistence;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -13,6 +14,7 @@ namespace MessageBroker.Worker.Maintenance;
 public sealed class MaintenanceLoop(
     IDeliveryRepository deliveries,
     IOperationsRepository operations,
+    IBrokerActivityFeed activity,
     IOptions<BrokerOptions> options,
     TimeProvider time,
     ILogger<MaintenanceLoop> logger) : BackgroundService
@@ -53,6 +55,8 @@ public sealed class MaintenanceLoop(
             logger.LogInformation("{Count} lapsed leases returned for retry or dead-lettered", leases);
         if (expired > 0)
             logger.LogInformation("{Count} pending deliveries expired and were dead-lettered", expired);
+        if (leases + expired > 0)
+            activity.Changed();
 
         await operations.WriteHeartbeatAsync(InstanceId, ct);
     }

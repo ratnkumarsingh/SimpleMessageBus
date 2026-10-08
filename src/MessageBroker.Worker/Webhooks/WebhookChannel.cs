@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using MessageBroker.Application.Dispatch;
 using MessageBroker.Application.Persistence;
 using MessageBroker.Application.Security;
 using MessageBroker.Application.Services;
@@ -22,6 +23,7 @@ public sealed class WebhookChannel(
     IDeliveryRepository deliveries,
     ISecretProtector secrets,
     CircuitBreakerRegistry circuits,
+    IBrokerActivityFeed activity,
     TimeProvider time,
     ILogger<WebhookChannel> logger) : IPushChannel
 {
@@ -134,6 +136,7 @@ public sealed class WebhookChannel(
             {
                 case WebhookDecision.Ack:
                     await deliveries.AckAsync(delivery.DeliveryId, delivery.LockToken, appId: null, result.HttpStatusCode);
+                    activity.DeliveryChanged(delivery.MessageId, delivery.DeliveryId);
                     break;
                 case WebhookDecision.Hold:
                     logger.LogInformation("Delivery {DeliveryId} accepted with 202; the lease stays open for a REST ACK", delivery.DeliveryId);
@@ -141,6 +144,7 @@ public sealed class WebhookChannel(
                 default:
                     var nack = await deliveries.NackAsync(delivery.DeliveryId, delivery.LockToken, appId: null,
                         new FailureDetails(result.ErrorCode, result.ErrorMessage, errorDetail, result.HttpStatusCode));
+                    activity.DeliveryChanged(delivery.MessageId, delivery.DeliveryId);
                     if (nack.DeadLettered)
                         logger.LogWarning("Delivery {DeliveryId} dead-lettered after webhook failure {ErrorCode}", delivery.DeliveryId, result.ErrorCode);
                     else

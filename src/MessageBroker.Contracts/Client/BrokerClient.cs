@@ -34,7 +34,7 @@ public sealed class BrokerClientOptions
 }
 
 /// <summary>
-/// Typed client for the broker REST API (publish, pull and traceability). The HttpClient must carry the
+/// Typed client for the broker REST API (publish, pull, traceability and the admin reads the dashboard uses). The HttpClient must carry the
 /// base address and the "Authorization: ApiKey" header; <see cref="BrokerClientExtensions.AddBrokerClient"/> sets both.
 /// </summary>
 public sealed class BrokerClient(HttpClient http)
@@ -86,6 +86,64 @@ public sealed class BrokerClient(HttpClient http)
     {
         using var response = await http.GetAsync($"api/v1/messages/{messageId}", ct);
         return await ReadAsync<MessageResponse>(response, ct);
+    }
+
+    // ---- admin reads (Admin keys; used by the dashboard) ----
+
+    public Task<OverviewResponse> GetOverviewAsync(int? windowMinutes = null, CancellationToken ct = default) =>
+        GetAsync<OverviewResponse>("api/v1/admin/overview" + Query(("windowMinutes", windowMinutes)), ct);
+
+    public Task<MessageSearchResponse> SearchMessagesAsync(MessageSearchRequest request, CancellationToken ct = default) =>
+        GetAsync<MessageSearchResponse>("api/v1/admin/messages" + Query(
+            ("topicId", request.TopicId), ("status", request.Status), ("messageType", request.MessageType),
+            ("correlationId", request.CorrelationId), ("publisherAppId", request.PublisherAppId),
+            ("from", request.From), ("to", request.To), ("cursor", request.Cursor), ("pageSize", request.PageSize)), ct);
+
+    public Task<IReadOnlyList<MessageSummaryResponse>> ListMessagesByCorrelationAsync(string correlationId, CancellationToken ct = default) =>
+        GetAsync<IReadOnlyList<MessageSummaryResponse>>("api/v1/messages" + Query(("correlationId", correlationId)), ct);
+
+    public Task<DeadLetterPage> SearchDeadLettersAsync(DeadLetterSearchRequest request, CancellationToken ct = default) =>
+        GetAsync<DeadLetterPage>("api/v1/admin/deadletters" + Query(
+            ("topicId", request.TopicId), ("subscriptionId", request.SubscriptionId), ("reason", request.Reason),
+            ("from", request.From), ("to", request.To), ("includeRequeued", request.IncludeRequeued ? true : null),
+            ("before", request.Before), ("pageSize", request.PageSize)), ct);
+
+    /// <summary>Returns a dead-lettered delivery to Pending with a fresh attempt budget.</summary>
+    public async Task RequeueDeadLetterAsync(long deliveryId, CancellationToken ct = default)
+    {
+        using var response = await http.PostAsync($"api/v1/deadletters/{deliveryId}/requeue", null, ct);
+        await EnsureSuccessAsync(response, ct);
+    }
+
+    public Task<IReadOnlyList<TopicResponse>> ListTopicsAsync(CancellationToken ct = default) =>
+        GetAsync<IReadOnlyList<TopicResponse>>("api/v1/topics", ct);
+
+    public Task<IReadOnlyList<SubscriptionResponse>> ListSubscriptionsAsync(Guid topicId, CancellationToken ct = default) =>
+        GetAsync<IReadOnlyList<SubscriptionResponse>>($"api/v1/topics/{topicId}/subscriptions", ct);
+
+    public Task<IReadOnlyList<ApplicationResponse>> ListApplicationsAsync(CancellationToken ct = default) =>
+        GetAsync<IReadOnlyList<ApplicationResponse>>("api/v1/admin/applications", ct);
+
+    public Task<IReadOnlyList<PermissionResponse>> ListPermissionsAsync(Guid appId, CancellationToken ct = default) =>
+        GetAsync<IReadOnlyList<PermissionResponse>>($"api/v1/admin/applications/{appId}/permissions", ct);
+
+    private async Task<T> GetAsync<T>(string path, CancellationToken ct)
+    {
+        using var response = await http.GetAsync(path, ct);
+        return await ReadAsync<T>(response, ct);
+    }
+
+    /// <summary>A query string of the non-null values; times are sent as UTC ISO 8601.</summary>
+    private static string Query(params (string Name, object? Value)[] values)
+    {
+        var parts = values.Where(v => v.Value is not null && v.Value is not "").Select(v => $"{v.Name}={Uri.EscapeDataString(v.Value switch
+        {
+            DateTime d => d.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+            bool b => b ? "true" : "false",
+            IFormattable f => f.ToString(null, System.Globalization.CultureInfo.InvariantCulture),
+            var other => other!.ToString()!,
+        })}").ToList();
+        return parts.Count == 0 ? "" : "?" + string.Join('&', parts);
     }
 
     private async Task PostAsync<T>(string path, T body, CancellationToken ct)

@@ -35,6 +35,7 @@ public static class DependencyInjection
         services.AddSingleton<IConnectionRegistry, ConnectionRegistry>();
         services.AddSingleton<SignalRChannel>();
         services.AddSingleton<IPushChannel>(sp => sp.GetRequiredService<SignalRChannel>());
+        services.AddSingleton<IPushStatus, WorkerPushStatus>();
 
         services.AddSingleton<LeaseLoop>();
         services.AddSingleton<MaintenanceLoop>();

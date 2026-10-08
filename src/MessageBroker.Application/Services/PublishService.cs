@@ -14,6 +14,7 @@ public sealed record PublishResult(PublishResponse Response, bool IsDuplicate);
 public sealed class PublishService(
     IMessageRepository messages,
     IDispatcherSignal signal,
+    IBrokerActivityFeed activity,
     IOptions<BrokerOptions> options,
     ILogger<PublishService> logger)
 {
@@ -51,6 +52,8 @@ public sealed class PublishService(
                     envelope.MessageType, topicName, result.DeliveryCount);
         }
 
+        if (!result.IsDuplicate)
+            activity.Published(result.MessageId);
         if (!result.IsDuplicate && result.DeliveryCount > 0)
             signal.Notify();
 
