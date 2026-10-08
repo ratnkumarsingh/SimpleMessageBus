@@ -24,6 +24,13 @@ public sealed class SampleSettings
     public string NotificationsTopicName { get; set; } = "notifications";
     public SampleApp BlazorPublisher { get; set; } = new();
     public SampleApp BlazorSubscriber { get; set; } = new();
+
+    /// <summary>Console samples on the notifications topic: one publisher, and one subscription per delivery mode that ConsoleSubscriber listens on together.</summary>
+    public SampleApp ConsolePublisher { get; set; } = new();
+    public SampleApp ConsoleSignalR { get; set; } = new();
+    public SampleApp ConsolePull { get; set; } = new();
+    /// <summary>Url is where ConsoleSubscriber listens for webhook calls.</summary>
+    public SampleApp ConsoleWebhook { get; set; } = new() { Url = "http://localhost:5084" };
 }
 
 public sealed class SampleApp

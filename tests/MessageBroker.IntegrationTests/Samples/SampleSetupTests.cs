@@ -13,7 +13,7 @@ public sealed class SampleSetupTests(SqlServerFixture sql) : ApiTest(sql)
     [Fact(DisplayName = "S03 Sample setup onboards the samples with the broker's default settings, and its settings file round-trips")]
     public async Task S03_SetupOnboardsSamples()
     {
-        var settings = new SampleSettings { TopicName = "payments", Webhook = { Url = $"https://{ApiFactory.SeededHost}" } };
+        var settings = new SampleSettings { TopicName = "payments", Webhook = { Url = $"https://{ApiFactory.SeededHost}" }, ConsoleWebhook = { Url = $"https://{ApiFactory.SeededHost}" } };
 
         await SampleSetup.RunAsync(Admin, settings);
 

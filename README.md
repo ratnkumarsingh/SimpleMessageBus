@@ -106,6 +106,7 @@ Then run any of:
 | `samples/SignalRSubscriber` | Receives deliveries over SignalR |
 | `samples/PullSubscriber` | Leases and settles deliveries over REST |
 | `samples/BlazorPublisher` / `samples/BlazorSubscriber` | Sends notifications on the `notifications` topic and shows them as toasts (`http://localhost:5082`, `http://localhost:5083`) |
+| `samples/ConsolePublisher` / `samples/ConsoleSubscriber` | Sends notifications from a prompt (`Title \| message \| level`) and prints each one as it arrives over SignalR, Pull and Webhook (`http://localhost:5084`) |
 
 ```powershell
 dotnet run --project samples/SamplePublisher -- --Generator:Count 20 --Generator:FailEvery 5

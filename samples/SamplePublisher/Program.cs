@@ -6,8 +6,10 @@ using SamplePublisher;
 using Samples.Shared;
 
 // dotnet run --project samples/SamplePublisher -- setup --AdminKey <key> [--Samples:BrokerUrl http://localhost:5080/]
+// dotnet run --project samples/SamplePublisher -- setup-console --AdminKey <key>   (adds only the console samples)
 // dotnet run --project samples/SamplePublisher [--Generator:Count 20] [--Generator:FailEvery 5] [--Generator:InvalidEvery 7]
-var setup = args is ["setup", ..];
+var setup = args is ["setup" or "setup-console", ..];
+var consoleOnly = args is ["setup-console", ..];
 var builder = Host.CreateApplicationBuilder(setup ? args[1..] : args);
 // The local file comes after appsettings but before the environment and command line, which still win.
 builder.Configuration.AddSampleSettings().AddEnvironmentVariables().AddCommandLine(setup ? args[1..] : args);
@@ -18,8 +20,16 @@ if (setup)
     var adminKey = builder.Configuration["AdminKey"]
         ?? throw new ArgumentException("Pass the broker's admin key: setup --AdminKey <key>");
     using var admin = SampleSetup.CreateAdminClient(settings.BrokerUrl, adminKey);
-    await SampleSetup.RunAsync(admin, settings);
     var path = SampleConfiguration.FindLocalFile() ?? SampleSettings.LocalFileName;
+    if (consoleOnly)
+    {
+        // The other samples' keys and subscriptions in the file are kept as they are.
+        await SampleSetup.RunConsoleAsync(admin, settings);
+        await SampleSetup.WriteAsync(settings, path);
+        Console.WriteLine($"Console samples onboarded on topic '{settings.NotificationsTopicName}'. Settings written to {path}");
+        return;
+    }
+    await SampleSetup.RunAsync(admin, settings);
     await SampleSetup.WriteAsync(settings, path);
     Console.WriteLine($"Samples onboarded on topic '{settings.TopicName}'. Settings written to {path}");
     return;

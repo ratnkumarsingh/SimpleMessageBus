@@ -15,6 +15,8 @@
     <ProjectReference Include="..\..\samples\WebhookSubscriber\WebhookSubscriber.csproj" />
     <ProjectReference Include="..\..\samples\SignalRSubscriber\SignalRSubscriber.csproj" />
     <ProjectReference Include="..\..\samples\PullSubscriber\PullSubscriber.csproj" />
+    <ProjectReference Include="..\..\samples\ConsolePublisher\ConsolePublisher.csproj" />
+    <ProjectReference Include="..\..\samples\ConsoleSubscriber\ConsoleSubscriber.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
