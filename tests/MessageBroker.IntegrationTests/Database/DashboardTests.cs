@@ -239,6 +239,29 @@ public class DashboardTests(SqlServerFixture sql) : DatabaseTest(sql)
         Assert.Equal(second.MessageId, await Deliveries.RequeueAsync(l2.DeliveryId, admin));
     }
 
+    [Fact(DisplayName = "D40 Dead letters of deleted subscriptions are left out of the overview total and the DLQ search")]
+    public async Task D40_DeletedSubscriptionDeadLetters()
+    {
+        var (topic, publisher, subscriber) = await ArrangeTopicAsync();
+        var kept = await CreateSubscriptionAsync(topic.TopicId, subscriber);
+        var deleted = await CreateSubscriptionAsync(topic.TopicId, subscriber);
+        await PublishAsync(topic.Name, publisher);
+        foreach (var sub in new[] { kept, deleted })
+        {
+            var leased = await LeaseOneAsync(sub.SubscriptionId, subscriber);
+            await Deliveries.NackAsync(leased.DeliveryId, leased.LockToken, subscriber, new FailureDetails("E", "x", DeadLetter: true));
+        }
+        Assert.Equal(2, (await Dashboard.GetOverviewAsync(60)).Totals.DeadLetteredCount);
+
+        await Subscriptions.DeleteAsync(deleted.SubscriptionId);
+
+        Assert.Equal(1, (await Dashboard.GetOverviewAsync(60)).Totals.DeadLetteredCount);
+        Assert.Equal(kept.SubscriptionId, Assert.Single(await Dashboard.SearchDeadLettersAsync(new())).SubscriptionId);
+        Assert.Empty(await Dashboard.SearchDeadLettersAsync(new(SubscriptionId: deleted.SubscriptionId, IncludeRequeued: true)));
+        // The history is kept: the rows are still in the table.
+        Assert.Equal(2, await ScalarAsync<int>("SELECT COUNT(*) FROM broker.DeadLetters"));
+    }
+
     [Fact(DisplayName = "D39 Migration 0003 creates the dashboard indexes")]
     public async Task D39_Indexes()
     {
