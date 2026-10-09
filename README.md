@@ -107,6 +107,7 @@ Then run any of:
 | `samples/PullSubscriber` | Leases and settles deliveries over REST |
 | `samples/BlazorPublisher` / `samples/BlazorSubscriber` | Sends notifications on the `notifications` topic and shows them as toasts (`http://localhost:5082`, `http://localhost:5083`) |
 | `samples/ConsolePublisher` / `samples/ConsoleSubscriber` | Sends notifications from a prompt (`Title \| message \| level`) and prints each one as it arrives over SignalR, Pull and Webhook (`http://localhost:5084`) |
+| `samples/ActiveBatch` | PowerShell script for scheduled jobs to publish an event (exit codes 0/1/2), and job setups for `SamplePublisher relay-once`, which sends events queued by stored procedures (`sample.usp_Outbox_Enqueue`) |
 
 ```powershell
 dotnet run --project samples/SamplePublisher -- --Generator:Count 20 --Generator:FailEvery 5

@@ -57,13 +57,36 @@ public sealed class OutboxRelay(OutboxStore outbox, BrokerClient broker, ILogger
             {
                 // Keep order: stop here and try this row again after the backoff, with the same key.
                 await outbox.MarkFailedAsync(row.OutboxId, Describe(ex), reject: false, ct);
-                logger.LogWarning("Broker unavailable for outbox row {OutboxId} (attempt {Attempt}): {Error}",
+                logger.LogWarning("Could not send outbox row {OutboxId} (attempt {Attempt}); it stays pending: {Error}",
                     row.OutboxId, row.Attempts + 1, Describe(ex));
                 return new RelayPass(sent, rejected, Faulted: true);
             }
         }
         return new RelayPass(sent, rejected, Faulted: false);
     }
+
+    /// <summary>
+    /// Sends everything pending, then returns: one run of "relay-once" for a scheduler such as
+    /// ActiveBatch. Stops early when the broker is unavailable; the rows wait for the next run.
+    /// </summary>
+    public async Task<RelayPass> DrainAsync(CancellationToken ct)
+    {
+        int sent = 0, rejected = 0;
+        while (true)
+        {
+            var pass = await RunOnceAsync(ct);
+            sent += pass.Sent;
+            rejected += pass.Rejected;
+            if (pass.Faulted || pass.Sent + pass.Rejected < BatchSize)
+                return new RelayPass(sent, rejected, pass.Faulted);
+        }
+    }
+
+    /// <summary>
+    /// The process exit code for a relay-once run: 0 all sent, 1 some rows rejected (bad events), 2 stopped early with
+    /// rows still pending (broker unreachable or unavailable, or a key/topic problem an operator can fix).
+    /// </summary>
+    public static int ExitCode(RelayPass pass) => pass.Faulted ? 2 : pass.Rejected > 0 ? 1 : 0;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

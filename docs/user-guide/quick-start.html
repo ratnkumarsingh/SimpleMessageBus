@@ -61,6 +61,8 @@
       <li>The idea in one page</li>
       <li>Before you start: what to ask the admin for</li>
       <li>Producer: how to send a message</li>
+      <li>Producer from a stored procedure</li>
+      <li>Producer from an ActiveBatch job</li>
       <li>Rules for every consumer</li>
       <li>Consumer with SignalR</li>
       <li>Consumer with Webhook</li>
@@ -127,7 +129,7 @@
     <tr><td>API key</td><td>Your app's password for the broker. Every call carries it.</td></tr>
   </table>
 
-  <div class="note"><b>Good to know:</b> the broker may sometimes deliver the same message <b>twice</b> (for example after a network error). This is normal. Every consumer must be able to handle a repeat safely (see chapter 4).</div>
+  <div class="note"><b>Good to know:</b> the broker may sometimes deliver the same message <b>twice</b> (for example after a network error). This is normal. Every consumer must be able to handle a repeat safely (see chapter 6).</div>
 </section>
 
 <!-- ============================== 2. ASK THE ADMIN ============================== -->
@@ -138,6 +140,8 @@
   <table>
     <tr><th style="width:24%">You are…</th><th style="width:38%">Tell the admin</th><th>You get back</th></tr>
     <tr><td><b>Producer</b></td><td>Your app's name and which topic you want to send to.</td><td>An <b>API key</b> and the <b>topic name</b>.</td></tr>
+    <tr><td><b>Producer · stored procedure</b></td><td>Your app's name and the topic. Your DBA also runs the outbox script once (chapter 4).</td><td>An <b>API key</b> for the relay that sends the events, and the <b>topic name</b>.</td></tr>
+    <tr><td><b>Producer · ActiveBatch job</b></td><td>The job's name and the topic.</td><td>An <b>API key</b> (keep it in ActiveBatch's secure store) and the <b>topic name</b>.</td></tr>
     <tr><td><b>Consumer · SignalR</b></td><td>Your app's name, the topic, and "SignalR mode".</td><td>An <b>API key</b> and a <b>subscription ID</b> (a GUID).</td></tr>
     <tr><td><b>Consumer · Webhook</b></td><td>Your app's name, the topic, "Webhook mode", and your <b>HTTPS address</b>, for example <code>https://billing.internal/webhooks/payments</code>.</td><td>An <b>API key</b>, a <b>subscription ID</b> and a <b>webhook secret</b> (used to check that calls really come from the broker).</td></tr>
     <tr><td><b>Consumer · Pull</b></td><td>Your app's name, the topic, and "Pull mode".</td><td>An <b>API key</b> and a <b>subscription ID</b>.</td></tr>
@@ -224,9 +228,121 @@
   </div>
 </section>
 
+<!-- ============================== 4. STORED PROCEDURE ============================== -->
+<section class="chapter">
+  <h2>4. Producer from a stored procedure</h2>
+  <div class="when"><b>Use this when</b> the event happens inside the database: a stored procedure changes data, and other apps must hear about it ("order shipped", "price changed").</div>
+
+  <p><b>Can a stored procedure call the broker directly?</b> No. SQL Server 2022 cannot call a web address by itself, and it would not be safe anyway: if the transaction rolls back after the call, the event was already sent for something that never happened. Instead, the procedure <b>writes the event into an outbox table</b>, in the same transaction as its work. A small program, the <b>relay</b>, then sends the outbox rows to the broker.</p>
+
+  <div class="diagram">
+  <svg viewBox="0 0 640 74" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif" font-size="12">
+    <defs><marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1f5fbf"/></marker></defs>
+    <rect x="4" y="14" width="230" height="50" rx="6" fill="#fbfcfe" stroke="#d9dee7" stroke-dasharray="4 3"/>
+    <text x="119" y="10" text-anchor="middle" fill="#5b6475" font-size="9.5">one transaction</text>
+    <rect x="14" y="22" width="100" height="34" rx="5" fill="#f3f6fb" stroke="#1f5fbf"/>
+    <text x="64" y="43" text-anchor="middle">Your work</text>
+    <rect x="124" y="22" width="100" height="34" rx="5" fill="#f3f6fb" stroke="#1f5fbf"/>
+    <text x="174" y="43" text-anchor="middle">Outbox row</text>
+    <rect x="290" y="22" width="150" height="34" rx="5" fill="#fff" stroke="#1f5fbf"/>
+    <text x="365" y="37" text-anchor="middle" font-weight="600">Relay</text>
+    <text x="365" y="50" text-anchor="middle" fill="#5b6475" font-size="9.5">always on, or every minute</text>
+    <rect x="500" y="22" width="130" height="34" rx="5" fill="#fff" stroke="#1f5fbf"/>
+    <text x="565" y="43" text-anchor="middle" font-weight="600">Broker</text>
+    <line x1="234" y1="39" x2="288" y2="39" stroke="#1f5fbf" stroke-width="1.5" marker-end="url(#b)"/>
+    <line x1="440" y1="39" x2="498" y2="39" stroke="#1f5fbf" stroke-width="1.5" marker-end="url(#b)"/>
+  </svg>
+  </div>
+
+  <div class="step">
+    <span class="num">Step 1</span><span class="title">One-time setup</span>
+    <p>Your DBA creates the outbox table and its procedures in your database, from <code>samples/Samples.Shared/sample.sql</code> (<code>Outbox</code>, <code>usp_Outbox_Enqueue</code>, <code>usp_Outbox_GetPending</code>, <code>usp_Outbox_MarkSent</code>, <code>usp_Outbox_MarkFailed</code>). Ask the admin for an API key and the topic name for the relay (chapter 2).</p>
+  </div>
+
+  <div class="step">
+    <span class="num">Step 2</span><span class="title">In your procedure, queue the event inside your transaction</span>
+    <p>Call <code>usp_Outbox_Enqueue</code> between <code>BEGIN TRAN</code> and <code>COMMIT</code>. If anything fails, the rollback removes your change <b>and</b> the event together, so they always match.</p>
+<pre><code>CREATE OR ALTER PROCEDURE dbo.usp_Order_Ship @OrderId nvarchar(50)
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    BEGIN TRAN;
+        UPDATE dbo.Orders SET Status = 'Shipped' WHERE OrderId = @OrderId;   -- your work
+
+        DECLARE @Payload nvarchar(max) =
+            (SELECT @OrderId AS orderId, SYSUTCDATETIME() AS shippedAt
+             FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
+        EXEC sample.usp_Outbox_Enqueue                                       -- the event
+             @TopicName = N'orders', @MessageType = N'OrderShipped.v1',
+             @Payload = @Payload, @CorrelationId = @OrderId;
+    COMMIT;
+END</code></pre>
+  </div>
+
+  <div class="step">
+    <span class="num">Step 3</span><span class="title">Run a relay</span>
+    <p>Pick one: the always-running <b>SamplePublisher</b> sends new rows within about a second. Or a scheduler (ActiveBatch, SQL Agent, Task Scheduler) runs <code>SamplePublisher.exe relay-once</code> every minute: it sends everything waiting, then stops (chapter 5, Way B). Each row is sent with the key <code>outbox-&lt;OutboxId&gt;</code>, so a row is never published twice, even if a run is cut off.</p>
+  </div>
+
+  <div class="step">
+    <span class="num">Step 4</span><span class="title">Keep an eye on the outbox</span>
+<pre><code>-- Waiting rows. Growing, or very old? The relay is stopped or the broker is down.
+SELECT COUNT(*) AS Waiting, MIN(CreatedAt) AS OldestWaiting
+FROM sample.Outbox WHERE SentAt IS NULL AND RejectedAt IS NULL;
+
+-- Rows the broker refused (bad event): fix the cause and queue the event again.
+SELECT OutboxId, MessageType, LastError FROM sample.Outbox WHERE RejectedAt IS NOT NULL;</code></pre>
+  </div>
+
+  <div class="tip"><b>Try it:</b> <code>EXEC sample.usp_Payment_Record 'PAY-SQL-1', 250, 'INR', 'payments'</code> records a payment and queues its <code>PaymentProcessed.v1</code> event. Run <code>relay-once</code>, and the sample subscribers receive it.</div>
+</section>
+
+<!-- ============================== 5. ACTIVEBATCH ============================== -->
+<section class="chapter">
+  <h2>5. Producer from an ActiveBatch job</h2>
+  <div class="when"><b>Use this when</b> a scheduled job must publish its own event ("nightly import finished"), or send the events your stored procedures queued. The job runs a command and looks at its <b>exit code</b>.</div>
+
+  <table>
+    <tr><th style="width:15%">Exit code</th><th style="width:45%">Meaning</th><th>Set the job to…</th></tr>
+    <tr><td><b>0</b></td><td>Done (or already published with this key).</td><td>Succeed.</td></tr>
+    <tr><td><b>1</b></td><td>Refused: wrong key, topic or event.</td><td>Fail and alert someone. Don't retry.</td></tr>
+    <tr><td><b>2</b></td><td>Broker unreachable. Nothing was lost.</td><td>Fail, restart later (e.g. 3 times, 1 min apart).</td></tr>
+  </table>
+
+  <h3>Way A: the job publishes its own event</h3>
+  <div class="step">
+    <span class="num">Step 1</span><span class="title">Keep the API key in ActiveBatch's secure store</span>
+    <p>Use a secure (hidden) variable or a credential object, and give it to the job as the environment variable <code>BROKER_API_KEY</code>. Never put the key on the command line: it would show in the job history.</p>
+  </div>
+  <div class="step">
+    <span class="num">Step 2</span><span class="title">Add a step that runs the script</span>
+    <p>Copy <code>samples/ActiveBatch/Publish-BrokerEvent.ps1</code> to the job's machine. As the last step of the job, after the real work, add a <b>PowerShell script</b> step:</p>
+<pre><code>$payload = @{ title = 'Nightly import'; text = '1,250 rows loaded'; level = 'Success' } |
+           ConvertTo-Json -Compress
+.\Publish-BrokerEvent.ps1 -BrokerUrl https://broker.internal/ -Topic notifications `
+    -MessageType UserNotification -Payload $payload `
+    -IdempotencyKey "nightly-import-$(Get-Date -Format yyyy-MM-dd)"
+exit $LASTEXITCODE</code></pre>
+    <p>The script retries a busy broker by itself (3 tries, with the same key) before it gives up with exit code 2. If the step can only run a command line, save the JSON in a file and pass <code>-PayloadFile event.json</code> instead: quotes inside JSON do not survive a Windows command line.</p>
+  </div>
+  <div class="step">
+    <span class="num">Step 3</span><span class="title">Choose the idempotency key well</span>
+    <p>Name the <b>business event</b>, not the run: <code>nightly-import-&lt;date&gt;</code>, <code>invoice-batch-&lt;batchId&gt;</code>. Then a rerun of the same job for the same day does not publish twice. <code>Example-NightlyJob.ps1</code> shows a whole job built this way.</p>
+  </div>
+
+  <div class="keep">
+  <h3>Way B: the job sends what stored procedures queued</h3>
+  <div class="step">
+    <span class="num">Step 1</span><span class="title">Schedule the relay every minute</span>
+    <p>Create a job that runs <code>SamplePublisher.exe relay-once</code> every minute, with "do not start while the previous run is still running". It sends all waiting outbox rows (chapter 4), prints for example <code>relay-once: 12 sent, 0 rejected</code>, and exits with the codes above. Here exit code 2 also covers a wrong key or topic: the rows simply wait, and the printed warning says why.</p>
+    <p class="small">Menu names differ between ActiveBatch versions: <code>samples/ActiveBatch/README.md</code> has the full job setup. The same commands work in SQL Agent and Windows Task Scheduler.</p>
+  </div>
+  </div>
+</section>
+
 <!-- ============================== 4. CONSUMER RULES ============================== -->
 <section class="chapter">
-  <h2>4. Rules for every consumer</h2>
+  <h2>6. Rules for every consumer</h2>
   <p>Whatever way you choose to receive (SignalR, Webhook or Pull), follow these five rules.</p>
   <ol>
     <li><b>Be ready for repeats.</b> The same message can arrive twice. Save the <code>messageId</code> of every message you have handled (in your database, in the same transaction as your work). If you see it again, just say "done" (ACK) and do nothing else.</li>
@@ -258,7 +374,7 @@
 
 <!-- ============================== 5. SIGNALR ============================== -->
 <section class="chapter">
-  <h2>5. Consumer with SignalR</h2>
+  <h2>7. Consumer with SignalR</h2>
   <div class="when"><b>Choose SignalR when</b> your app cannot offer a web address the broker can call (desktop app, behind a firewall, Blazor Server), or you want messages <b>instantly</b>. Your app opens one connection to the broker and keeps it open; the broker pushes each message down that connection.</div>
 
   <div class="step">
@@ -309,7 +425,7 @@
 
 <!-- ============================== 6. WEBHOOK ============================== -->
 <section class="chapter">
-  <h2>6. Consumer with Webhook</h2>
+  <h2>8. Consumer with Webhook</h2>
   <div class="when"><b>Choose Webhook when</b> your app is a web service that already has an HTTPS address. You do not keep any connection open: <b>the broker calls you</b> with an HTTP POST for every message, and your HTTP answer tells it whether it worked.</div>
 
   <div class="step">
@@ -365,7 +481,7 @@ app.MapPost("/webhooks/payments", async (HttpRequest request, PaymentHandler han
 
 <!-- ============================== 7. PULL ============================== -->
 <section class="chapter">
-  <h2>7. Consumer with Long polling (Pull)</h2>
+  <h2>9. Consumer with Long polling (Pull)</h2>
   <div class="when"><b>Choose Pull when</b> you want to decide yourself <b>when</b> and <b>how fast</b> to take messages: background workers, batch jobs, or work you want to spread over several copies of your app. Your app <b>asks</b> the broker for messages in a loop.</div>
 
   <p><b>What is long polling?</b> Your app asks "any messages?" and the broker <b>waits</b> (up to 20 seconds here) before answering. As soon as a message arrives, the answer comes back at once. If nothing arrives, you get an empty list and simply ask again. So your app reacts instantly, but does not flood the broker with questions.</p>
@@ -439,7 +555,7 @@ app.MapPost("/webhooks/payments", async (HttpRequest request, PaymentHandler han
 
 <!-- ============================== 8. PICK ============================== -->
 <section class="chapter">
-  <h2>8. Which one should I pick?</h2>
+  <h2>10. Which one should I pick?</h2>
   <table>
     <tr><th style="width:22%"></th><th>SignalR</th><th>Webhook</th><th>Long polling (Pull)</th></tr>
     <tr><td><b>How it works</b></td><td>You keep a connection open; the broker pushes.</td><td>The broker calls your HTTPS address.</td><td>You ask in a loop; the broker waits until there is something.</td></tr>
@@ -452,7 +568,7 @@ app.MapPost("/webhooks/payments", async (HttpRequest request, PaymentHandler han
   </table>
   <div class="note"><b>Not sure?</b> If you are a web API, pick <b>Webhook</b>. If you cannot be called from outside, pick <b>SignalR</b>. If you want full control over speed, pick <b>Pull</b>.</div>
 
-  <h2 style="margin-top:22pt">9. When something goes wrong</h2>
+  <h2 style="margin-top:22pt">11. When something goes wrong</h2>
   <table>
     <tr><th style="width:32%">You see</th><th>What to do</th></tr>
     <tr><td><b>401 Unauthorized</b></td><td>Your API key is missing, wrong or expired. Check your settings; ask the admin for a new key if needed.</td></tr>

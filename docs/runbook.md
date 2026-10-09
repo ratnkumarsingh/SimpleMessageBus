@@ -320,6 +320,13 @@ ConsoleSubscriber has three subscriptions, one per delivery mode, so each notifi
 ```
 BlazorPublisher's notifications show up here too, and ConsolePublisher's appear as toasts in BlazorSubscriber. Each channel deduplicates and dead-letters on its own, like BlazorSubscriber. While ConsoleSubscriber is stopped, its webhook deliveries fail three attempts and are dead-lettered (`MaxAttemptsExceeded`); its Pull and SignalR deliveries wait until it starts again or their TTL runs out.
 
+**Publishing from stored procedures and scheduled jobs.** Any stored procedure can publish by calling `sample.usp_Outbox_Enqueue` inside its own transaction; the event is stored only if the transaction commits (`sample.usp_Payment_Record` does this). The always-running SamplePublisher relay sends the rows, or a scheduler runs one pass and exits:
+```powershell
+sqlcmd -S . -E -d BrokerSamples -Q "EXEC sample.usp_Payment_Record 'PAY-SQL-1', 250, 'INR', 'payments'"
+dotnet run --project samples/SamplePublisher -- relay-once      # relay-once: 1 sent, 0 rejected   (exit 0)
+```
+Exit codes: `0` everything sent, `1` some rows rejected by the broker (alert, do not retry), `2` stopped early with rows still pending: broker unreachable, or a key/topic problem shown in the warning (the next run sends them with the same `outbox-<id>` key). A job can also publish its own event with `samples/ActiveBatch/Publish-BrokerEvent.ps1` (same exit codes); `samples/ActiveBatch/README.md` describes both ActiveBatch job setups.
+
 Tests: `dotnet test InternalMessageBroker.sln` (local SQL Server; `BROKER_TEST_SQL` overrides the server). It includes the concurrency (C01, C02) and restart (R01, R02) tests, which take about 25 s together.
 
 The load test (L01) runs separately and should be built in Release:

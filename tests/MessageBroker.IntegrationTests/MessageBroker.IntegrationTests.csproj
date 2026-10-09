@@ -19,6 +19,10 @@
     <ProjectReference Include="..\..\samples\ConsoleSubscriber\ConsoleSubscriber.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- S13 runs the ActiveBatch sample scripts from the test output folder. -->
+    <None Include="..\..\samples\ActiveBatch\*.ps1" LinkBase="ActiveBatch" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 </Project>
