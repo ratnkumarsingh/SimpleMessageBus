@@ -1,5 +1,10 @@
 -- Schema for the sample applications. A real publisher and subscriber would each own a database;
 -- the samples share one, keyed by subscriber name. Safe to run on every start.
+-- The procedures keep the settings they are created with, and writes to sample.Outbox (filtered index) need
+-- QUOTED_IDENTIFIER ON. sqlcmd defaults to OFF, so set both here for anyone running this script by hand.
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
 IF SCHEMA_ID(N'sample') IS NULL EXEC(N'CREATE SCHEMA sample');
 GO
 
@@ -60,6 +65,32 @@ CREATE TABLE sample.ProcessedMessages
 );
 GO
 
+/*
+   Queues an event for the broker. Any stored procedure can publish this way: call it inside the
+   procedure's own transaction, so the event is stored if and only if the business change commits.
+   A relay (SamplePublisher, or "SamplePublisher relay-once" on a schedule) sends it afterwards with
+   the Idempotency-Key outbox-<OutboxId>. It opens no transaction of its own.
+*/
+CREATE OR ALTER PROCEDURE sample.usp_Outbox_Enqueue
+    @TopicName     nvarchar(100),
+    @MessageType   nvarchar(200),
+    @Payload       nvarchar(max),
+    @CorrelationId nvarchar(100) = NULL,
+    @OutboxId      bigint = NULL OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF NULLIF(LTRIM(@TopicName), N'') IS NULL OR NULLIF(LTRIM(@MessageType), N'') IS NULL
+        THROW 50001, N'usp_Outbox_Enqueue: @TopicName and @MessageType are required.', 1;
+    IF @Payload IS NULL OR ISJSON(@Payload) = 0
+        THROW 50002, N'usp_Outbox_Enqueue: @Payload must be valid JSON.', 1;
+
+    INSERT sample.Outbox (TopicName, MessageType, CorrelationId, Payload)
+    VALUES (@TopicName, @MessageType, COALESCE(@CorrelationId, CONVERT(nvarchar(36), NEWID())), @Payload);
+    SET @OutboxId = CAST(SCOPE_IDENTITY() AS bigint);
+END
+GO
+
 /* Records a payment and its PaymentProcessed.v1 event in one transaction. */
 CREATE OR ALTER PROCEDURE sample.usp_Payment_Record
     @PaymentId nvarchar(50),
@@ -72,10 +103,15 @@ BEGIN
     BEGIN TRY
         BEGIN TRAN;
         INSERT sample.Payments (PaymentId, Amount, Currency) VALUES (@PaymentId, @Amount, @Currency);
-        INSERT sample.Outbox (TopicName, MessageType, CorrelationId, Payload)
-        VALUES (@TopicName, N'PaymentProcessed.v1', @PaymentId,
-                (SELECT @PaymentId AS paymentId, @Amount AS amount, @Currency AS currency FOR JSON PATH, WITHOUT_ARRAY_WRAPPER));
-        SELECT CAST(SCOPE_IDENTITY() AS bigint) AS OutboxId;
+
+        DECLARE @Payload nvarchar(max) =
+            (SELECT @PaymentId AS paymentId, @Amount AS amount, @Currency AS currency FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
+        DECLARE @OutboxId bigint;
+        EXEC sample.usp_Outbox_Enqueue
+            @TopicName = @TopicName, @MessageType = N'PaymentProcessed.v1',
+            @Payload = @Payload, @CorrelationId = @PaymentId, @OutboxId = @OutboxId OUTPUT;
+
+        SELECT @OutboxId AS OutboxId;
         COMMIT;
     END TRY
     BEGIN CATCH

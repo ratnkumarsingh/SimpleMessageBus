@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.Data.SqlClient;
 using MessageBroker.Contracts.Client;
 using MessageBroker.IntegrationTests.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -108,5 +109,84 @@ public sealed class SamplePublisherTests(SqlServerFixture sql) : ApiTest(sql)
         Assert.NotNull(rejected.RejectedAt);
         Assert.StartsWith("400", rejected.LastError);
         Assert.Equal(new RelayPass(0, 0, Faulted: false), await PassAsync());
+    }
+    [Fact(DisplayName = "S12 Stored procedure publishing: usp_Outbox_Enqueue commits and rolls back with the caller's transaction; relay-once drains the outbox and reports 0 sent, 1 rejected, 2 broker unavailable")]
+    public async Task S12_StoredProcedureEventsAndRelayOnce()
+    {
+        var topic = await CreateTopicViaApiAsync();
+        var (publisherId, publisherKey, _) = await CreateAppClientAsync();
+        await GrantViaApiAsync(publisherId, "Topic", topic.TopicId, "Publish");
+        var (subscriberId, _, _) = await CreateAppClientAsync();
+        await CreateSubscriptionAsync(topic.TopicId, subscriberId, mode: "Pull");
+
+        var network = new FlakyNetwork(Api.Server.CreateHandler());
+        var broker = BrokerClient.Create(new HttpClient(network) { BaseAddress = Api.Server.BaseAddress }, publisherKey);
+        var relay = new OutboxRelay(new OutboxStore(new SampleDatabase(Sql.ConnectionString)), broker,
+            NullLogger<OutboxRelay>.Instance, TimeProvider.System);
+        Task<RelayPass> RelayOnceAsync() => relay.DrainAsync(CancellationToken.None);
+
+        // A business procedure's transaction: the event is queued only if the transaction commits.
+        const string enqueue = """
+            BEGIN TRAN;
+            DECLARE @id bigint;
+            EXEC sample.usp_Outbox_Enqueue @TopicName = @topic, @MessageType = N'OrderShipped.v1',
+                 @Payload = N'{"orderId":"ORD-1"}', @CorrelationId = N'ORD-1', @OutboxId = @id OUTPUT;
+            IF @commit = 1 COMMIT ELSE ROLLBACK;
+            """;
+        await ExecAsync(enqueue, new { topic = topic.Name, commit = false });
+        Assert.Empty(await OutboxAsync());
+        await ExecAsync(enqueue, new { topic = topic.Name, commit = true });
+        var queued = Assert.Single(await OutboxAsync());
+        Assert.Null(queued.SentAt);
+
+        // Bad input is refused inside the procedure, so the caller's transaction fails too.
+        var bad = await Assert.ThrowsAsync<SqlException>(() => ExecAsync(
+            "EXEC sample.usp_Outbox_Enqueue @TopicName = @topic, @MessageType = N'X.v1', @Payload = N'not json'",
+            new { topic = topic.Name }));
+        Assert.Equal(50002, bad.Number);
+        var blank = await Assert.ThrowsAsync<SqlException>(() => ExecAsync(
+            "EXEC sample.usp_Outbox_Enqueue @TopicName = N' ', @MessageType = N'X.v1', @Payload = N'{}'"));
+        Assert.Equal(50001, blank.Number);
+        // A missing correlation ID gets a generated one (the column is required).
+        await ExecAsync("EXEC sample.usp_Outbox_Enqueue @TopicName = @topic, @MessageType = N'X.v1', @Payload = N'{}'",
+            new { topic = topic.Name });
+        Assert.Equal(1, await ScalarAsync<int>("SELECT COUNT(*) FROM sample.Outbox WHERE TRY_CONVERT(uniqueidentifier, CorrelationId) IS NOT NULL"));
+
+        // More rows than one batch, so relay-once has to loop until the outbox is empty.
+        await ExecAsync("""
+            DECLARE @i int = 1, @id bigint, @p nvarchar(max);
+            WHILE @i <= 60
+            BEGIN
+                SET @p = CONCAT(N'{"orderId":"ORD-B', @i, N'"}');
+                EXEC sample.usp_Outbox_Enqueue @TopicName = @topic, @MessageType = N'OrderShipped.v1', @Payload = @p, @OutboxId = @id OUTPUT;
+                SET @i += 1;
+            END
+            """, new { topic = topic.Name });
+
+        // Broker down: exit code 2, nothing sent, rows stay pending for the next run.
+        network.Mode = FlakyNetwork.State.Unreachable;
+        var down = await RelayOnceAsync();
+        Assert.Equal(new RelayPass(0, 0, Faulted: true), down);
+        Assert.Equal(2, OutboxRelay.ExitCode(down));
+        Assert.All(await OutboxAsync(), r => Assert.Null(r.SentAt));
+
+        // Back up: one run sends all 62 rows (exit 0); the next run has nothing to do (exit 0).
+        network.Mode = FlakyNetwork.State.Up;
+        var up = await RelayOnceAsync();
+        Assert.Equal(new RelayPass(62, 0, Faulted: false), up);
+        Assert.Equal(0, OutboxRelay.ExitCode(up));
+        Assert.Equal(new RelayPass(0, 0, Faulted: false), await RelayOnceAsync());
+        Assert.Equal(62, (await BrokerMessagesAsync()).Count);
+        Assert.Equal(62, await ScalarAsync<int>("SELECT COUNT(*) FROM broker.Deliveries"));
+
+        // A row the broker refuses (a blank message type is a 400) is set aside: exit code 1.
+        await ExecAsync("""
+            INSERT sample.Outbox (TopicName, MessageType, CorrelationId, Payload)
+            VALUES (@topic, N'   ', N'ORD-BAD', N'{"orderId":"ORD-BAD"}')
+            """, new { topic = topic.Name });
+        var rejected = await RelayOnceAsync();
+        Assert.Equal(new RelayPass(0, 1, Faulted: false), rejected);
+        Assert.Equal(1, OutboxRelay.ExitCode(rejected));
+        Assert.Equal(62, (await BrokerMessagesAsync()).Count);
     }
 }
