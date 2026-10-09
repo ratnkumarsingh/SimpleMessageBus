@@ -40,7 +40,7 @@ public class PublishTests(SqlServerFixture sql) : DatabaseTest(sql)
         var result = await PublishAsync(topic.Name, publisher);
 
         Assert.Equal(0, result.DeliveryCount);
-        Assert.Equal(1, await ScalarAsync<int>("SELECT COUNT(*) FROM broker.Messages WHERE MessageId = @id", new { id = result.MessageId }));
+        Assert.Equal(1, await ScalarAsync<int>("SELECT COUNT(*) FROM broker.Messages WHERE MessageId = @id", P("id", result.MessageId)));
     }
 
     [Fact(DisplayName = "D03 Same idempotency key returns the original message; other topic or publisher does not")]
@@ -118,7 +118,7 @@ public class PublishTests(SqlServerFixture sql) : DatabaseTest(sql)
         d = (await GetDeliveriesForMessageAsync(bareResult.MessageId)).ToDictionary(x => x.SubscriptionId);
         Assert.Null(d[bareNoTtl.SubscriptionId].ExpiresAt);
         AssertSecondsAfterCreate(90, d[bareTtl.SubscriptionId]);
-        Assert.Null((await QueryAsync<DateTime?>("SELECT ExpiresAt FROM broker.Messages WHERE MessageId = @id", new { id = bareResult.MessageId })).Single());
+        Assert.Null((await QueryAsync<DateTime?>("SELECT ExpiresAt FROM broker.Messages WHERE MessageId = @id", r => Col<DateTime?>(r, 0), P("id", bareResult.MessageId))).Single());
 
         static void AssertSecondsAfterCreate(int seconds, DeliveryRow row) =>
             Assert.Equal(seconds, (row.ExpiresAt!.Value - row.CreatedAt).TotalSeconds, precision: 0);
@@ -139,12 +139,12 @@ public class PublishTests(SqlServerFixture sql) : DatabaseTest(sql)
 
         var ex = await Assert.ThrowsAsync<SqlException>(() => ExecAsync(
             "EXEC broker.usp_Message_Publish @MessageId=@id, @TopicName=@t, @AppId=@a, @MessageType='T', @CorrelationId='c', @Payload='{not json'",
-            new { id = Guid.NewGuid(), t = topic.Name, a = publisher }));
+            P("id", Guid.NewGuid()), P("t", topic.Name), P("a", publisher)));
         Assert.Equal(547, ex.Number); // CHECK constraint violation
 
         ex = await Assert.ThrowsAsync<SqlException>(() => ExecAsync(
             "EXEC broker.usp_Message_Publish @MessageId=@id, @TopicName=@t, @AppId=@a, @MessageType='T', @CorrelationId='c', @Payload='{}', @Properties='[oops'",
-            new { id = Guid.NewGuid(), t = topic.Name, a = publisher }));
+            P("id", Guid.NewGuid()), P("t", topic.Name), P("a", publisher)));
         Assert.Equal(547, ex.Number);
     }
 

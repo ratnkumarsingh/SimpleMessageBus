@@ -10,6 +10,7 @@ using MessageBroker.IntegrationTests.Infrastructure;
 using MessageBroker.IntegrationTests.PushChannels;
 using MessageBroker.Worker.Maintenance;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Data.SqlClient;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
@@ -23,17 +24,21 @@ namespace MessageBroker.IntegrationTests.Samples;
 
 public sealed class SampleSubscriberTests(SqlServerFixture sql) : WebhookTest(sql)
 {
-    private sealed record Invoice(string Subscriber, string PaymentId, decimal Amount, string Status, int TimesApplied);
+    private sealed record Invoice(string Subscriber, string PaymentId, decimal Amount, string Status, int TimesApplied)
+    {
+        public static Invoice Read(SqlDataReader r) => new(
+            Col<string>(r, 0), Col<string>(r, 1), Col<decimal>(r, 2), Col<string>(r, 3), Col<int>(r, 4));
+    }
 
     private SampleDatabase SampleDb => new(Sql.ConnectionString);
 
     private PaymentHandler Handler(string subscriber) => new(new InvoiceStore(SampleDb), subscriber, NullLogger.Instance);
 
     private Task<IReadOnlyList<Invoice>> InvoicesAsync() =>
-        QueryAsync<Invoice>("SELECT Subscriber, PaymentId, Amount, Status, TimesApplied FROM sample.Invoices ORDER BY PaymentId");
+        QueryAsync<Invoice>("SELECT Subscriber, PaymentId, Amount, Status, TimesApplied FROM sample.Invoices ORDER BY PaymentId", Invoice.Read);
 
     private Task<int> ProcessedAsync(string subscriber) =>
-        ScalarAsync<int>("SELECT COUNT(*) FROM sample.ProcessedMessages WHERE Subscriber = @subscriber", new { subscriber });
+        ScalarAsync<int>("SELECT COUNT(*) FROM sample.ProcessedMessages WHERE Subscriber = @subscriber", P("subscriber", subscriber));
 
     private async Task<(TopicResponse Topic, HttpClient Publisher, Guid OwnerId, string OwnerKey)> ArrangeAsync()
     {

@@ -35,13 +35,17 @@ public sealed class FlakyNetwork(HttpMessageHandler broker) : DelegatingHandler(
 
 public sealed class SamplePublisherTests(SqlServerFixture sql) : ApiTest(sql)
 {
-    private sealed record OutboxState(long OutboxId, int Attempts, string? LastError, DateTime? SentAt, Guid? MessageId, DateTime? RejectedAt);
+    private sealed record OutboxState(long OutboxId, int Attempts, string? LastError, DateTime? SentAt, Guid? MessageId, DateTime? RejectedAt)
+    {
+        public static OutboxState Read(SqlDataReader r) => new(
+            Col<long>(r, 0), Col<int>(r, 1), Col<string?>(r, 2), Col<DateTime?>(r, 3), Col<Guid?>(r, 4), Col<DateTime?>(r, 5));
+    }
 
     private Task<IReadOnlyList<OutboxState>> OutboxAsync() =>
-        QueryAsync<OutboxState>("SELECT OutboxId, Attempts, LastError, SentAt, MessageId, RejectedAt FROM sample.Outbox ORDER BY OutboxId");
+        QueryAsync<OutboxState>("SELECT OutboxId, Attempts, LastError, SentAt, MessageId, RejectedAt FROM sample.Outbox ORDER BY OutboxId", OutboxState.Read);
 
     private Task<IReadOnlyList<(string Key, Guid MessageId)>> BrokerMessagesAsync() =>
-        QueryAsync<(string, Guid)>("SELECT IdempotencyKey, MessageId FROM broker.Messages ORDER BY IdempotencyKey");
+        QueryAsync<(string, Guid)>("SELECT IdempotencyKey, MessageId FROM broker.Messages ORDER BY IdempotencyKey", r => (Col<string>(r, 0), Col<Guid>(r, 1)));
 
     [Fact(DisplayName = "S01 Sample publisher: outbox rows written during a broker outage are sent afterwards with the same key, with no duplicates")]
     public async Task S01_OutboxSurvivesOutage()
@@ -100,7 +104,7 @@ public sealed class SamplePublisherTests(SqlServerFixture sql) : ApiTest(sql)
         await ExecAsync("""
             INSERT sample.Outbox (TopicName, MessageType, CorrelationId, Payload)
             VALUES (@topic, N'   ', N'PAY-BAD', N'{"paymentId":"PAY-BAD","amount":1}')
-            """, new { topic = topic.Name });
+            """, P("topic", topic.Name));
         var after = await outbox.RecordPaymentAsync("PAY-S01-4", 104, "INR", topic.Name);
         Assert.Equal(new RelayPass(1, 1, Faulted: false), await PassAsync());
         rows = await OutboxAsync();
@@ -133,23 +137,23 @@ public sealed class SamplePublisherTests(SqlServerFixture sql) : ApiTest(sql)
                  @Payload = N'{"orderId":"ORD-1"}', @CorrelationId = N'ORD-1', @OutboxId = @id OUTPUT;
             IF @commit = 1 COMMIT ELSE ROLLBACK;
             """;
-        await ExecAsync(enqueue, new { topic = topic.Name, commit = false });
+        await ExecAsync(enqueue, P("topic", topic.Name), P("commit", false));
         Assert.Empty(await OutboxAsync());
-        await ExecAsync(enqueue, new { topic = topic.Name, commit = true });
+        await ExecAsync(enqueue, P("topic", topic.Name), P("commit", true));
         var queued = Assert.Single(await OutboxAsync());
         Assert.Null(queued.SentAt);
 
         // Bad input is refused inside the procedure, so the caller's transaction fails too.
         var bad = await Assert.ThrowsAsync<SqlException>(() => ExecAsync(
             "EXEC sample.usp_Outbox_Enqueue @TopicName = @topic, @MessageType = N'X.v1', @Payload = N'not json'",
-            new { topic = topic.Name }));
+            P("topic", topic.Name)));
         Assert.Equal(50002, bad.Number);
         var blank = await Assert.ThrowsAsync<SqlException>(() => ExecAsync(
             "EXEC sample.usp_Outbox_Enqueue @TopicName = N' ', @MessageType = N'X.v1', @Payload = N'{}'"));
         Assert.Equal(50001, blank.Number);
         // A missing correlation ID gets a generated one (the column is required).
         await ExecAsync("EXEC sample.usp_Outbox_Enqueue @TopicName = @topic, @MessageType = N'X.v1', @Payload = N'{}'",
-            new { topic = topic.Name });
+            P("topic", topic.Name));
         Assert.Equal(1, await ScalarAsync<int>("SELECT COUNT(*) FROM sample.Outbox WHERE TRY_CONVERT(uniqueidentifier, CorrelationId) IS NOT NULL"));
 
         // More rows than one batch, so relay-once has to loop until the outbox is empty.
@@ -161,7 +165,7 @@ public sealed class SamplePublisherTests(SqlServerFixture sql) : ApiTest(sql)
                 EXEC sample.usp_Outbox_Enqueue @TopicName = @topic, @MessageType = N'OrderShipped.v1', @Payload = @p, @OutboxId = @id OUTPUT;
                 SET @i += 1;
             END
-            """, new { topic = topic.Name });
+            """, P("topic", topic.Name));
 
         // Broker down: exit code 2, nothing sent, rows stay pending for the next run.
         network.Mode = FlakyNetwork.State.Unreachable;
@@ -183,7 +187,7 @@ public sealed class SamplePublisherTests(SqlServerFixture sql) : ApiTest(sql)
         await ExecAsync("""
             INSERT sample.Outbox (TopicName, MessageType, CorrelationId, Payload)
             VALUES (@topic, N'   ', N'ORD-BAD', N'{"orderId":"ORD-BAD"}')
-            """, new { topic = topic.Name });
+            """, P("topic", topic.Name));
         var rejected = await RelayOnceAsync();
         Assert.Equal(new RelayPass(0, 1, Faulted: false), rejected);
         Assert.Equal(1, OutboxRelay.ExitCode(rejected));

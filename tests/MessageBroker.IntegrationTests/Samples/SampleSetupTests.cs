@@ -18,7 +18,7 @@ public sealed class SampleSetupTests(SqlServerFixture sql) : ApiTest(sql)
         await SampleSetup.RunAsync(Admin, settings);
 
         var modes = await QueryAsync<(Guid, string, int, int)>(
-            "SELECT s.SubscriptionId, s.DeliveryMode, s.WebhookTimeoutSeconds, s.LockDurationSeconds FROM broker.Subscriptions s JOIN broker.Topics t ON t.TopicId = s.TopicId WHERE t.Name = 'payments' ORDER BY s.DeliveryMode");
+            "SELECT s.SubscriptionId, s.DeliveryMode, s.WebhookTimeoutSeconds, s.LockDurationSeconds FROM broker.Subscriptions s JOIN broker.Topics t ON t.TopicId = s.TopicId WHERE t.Name = 'payments' ORDER BY s.DeliveryMode", r => (Col<Guid>(r, 0), Col<string>(r, 1), Col<int>(r, 2), Col<int>(r, 3)));
         Assert.Equal(["Pull", "SignalR", "Webhook"], modes.Select(m => m.Item2));
         Assert.All(modes.Where(m => m.Item2 == "Webhook"), m => Assert.True(m.Item3 < m.Item4));
         Assert.Single(settings.Webhook.Secrets);

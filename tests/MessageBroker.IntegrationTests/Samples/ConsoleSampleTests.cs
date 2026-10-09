@@ -39,16 +39,16 @@ public sealed class ConsoleSampleTests(SqlServerFixture sql) : ApiTest(sql)
         Assert.Equal($"https://{ApiFactory.SeededHost}", settings.ConsoleWebhook.Url);
         Assert.Single(settings.ConsoleWebhook.Secrets);
         Assert.Equal($"https://{ApiFactory.SeededHost}{NotificationWebhook.Path}",
-            await ScalarAsync<string>("SELECT WebhookUrl FROM broker.Subscriptions WHERE SubscriptionId = @id", new { id = settings.ConsoleWebhook.SubscriptionId }));
+            await ScalarAsync<string>("SELECT WebhookUrl FROM broker.Subscriptions WHERE SubscriptionId = @id", P("id", settings.ConsoleWebhook.SubscriptionId)));
 
         // The test broker requires HTTPS (Development allows HTTP); point the subscription at a local HTTP listener.
         var webhookUrl = $"http://127.0.0.1:{FreePort()}";
         settings.ConsoleWebhook.Url = webhookUrl;
         await ExecAsync("UPDATE broker.Subscriptions SET WebhookUrl = @url WHERE SubscriptionId = @id",
-            new { url = webhookUrl + NotificationWebhook.Path, id = settings.ConsoleWebhook.SubscriptionId });
+            P("url", webhookUrl + NotificationWebhook.Path), P("id", settings.ConsoleWebhook.SubscriptionId));
         var modes = await QueryAsync<string>(
-            "SELECT s.DeliveryMode FROM broker.Subscriptions s JOIN broker.Topics t ON t.TopicId = s.TopicId WHERE t.Name = @name ORDER BY s.DeliveryMode",
-            new { name = settings.NotificationsTopicName });
+            "SELECT s.DeliveryMode FROM broker.Subscriptions s JOIN broker.Topics t ON t.TopicId = s.TopicId WHERE t.Name = @name ORDER BY s.DeliveryMode", r => Col<string>(r, 0),
+            P("name", settings.NotificationsTopicName));
         Assert.Equal(["Pull", "SignalR", "Webhook"], modes);
 
         // ConsoleSubscriber, as Program.Main builds it, reaching the in-process broker.

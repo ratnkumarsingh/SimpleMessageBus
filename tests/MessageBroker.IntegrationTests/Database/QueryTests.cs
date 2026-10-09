@@ -7,11 +7,11 @@ namespace MessageBroker.IntegrationTests.Database;
 public class QueryTests(SqlServerFixture sql) : DatabaseTest(sql)
 {
     private Task<string> StatusAsync(Guid messageId) =>
-        ScalarAsync<string>("SELECT Status FROM broker.vw_MessageStatus WHERE MessageId = @messageId", new { messageId });
+        ScalarAsync<string>("SELECT Status FROM broker.vw_MessageStatus WHERE MessageId = @messageId", P("messageId", messageId));
 
     private Task SetStatusAsync(Guid subscriptionId, Guid messageId, DeliveryStatus status) =>
         ExecAsync("UPDATE broker.Deliveries SET Status = @status WHERE SubscriptionId = @subscriptionId AND MessageId = @messageId",
-            new { status = (byte)status, subscriptionId, messageId });
+            P("status", (byte)status), P("subscriptionId", subscriptionId), P("messageId", messageId));
 
     [Fact(DisplayName = "D18 [Fix 12] vw_MessageStatus derives status and ignores Cancelled deliveries")]
     public async Task D18_MessageStatus()
@@ -151,8 +151,9 @@ public class QueryTests(SqlServerFixture sql) : DatabaseTest(sql)
             await Deliveries.NackAsync(leased[m.MessageId].DeliveryId, leased[m.MessageId].LockToken, subscriber, new FailureDetails("X", "x", DeadLetter: true));
 
         const int day = 86_400;
-        await ExecAsync("UPDATE broker.Messages SET CreatedAt = DATEADD(day, -100, CreatedAt) WHERE MessageId IN @ids",
-            new { ids = new[] { oldCompleted.MessageId, oldDeadLetter.MessageId, recentDeadLetter.MessageId, stillPending.MessageId, oldNoSubs.MessageId } });
+        await ExecAsync("UPDATE broker.Messages SET CreatedAt = DATEADD(day, -100, CreatedAt) WHERE MessageId IN (@m1, @m2, @m3, @m4, @m5)",
+            P("m1", oldCompleted.MessageId), P("m2", oldDeadLetter.MessageId), P("m3", recentDeadLetter.MessageId),
+            P("m4", stillPending.MessageId), P("m5", oldNoSubs.MessageId));
         await BackdateAsync("Deliveries", "DeliveryId", leased[oldCompleted.MessageId].DeliveryId, "CompletedAt", 15 * day);
         await BackdateAsync("DeadLetters", "DeliveryId", leased[oldDeadLetter.MessageId].DeliveryId, "DeadLetteredAt", 91 * day);
         await BackdateAsync("DeadLetters", "DeliveryId", leased[recentDeadLetter.MessageId].DeliveryId, "DeadLetteredAt", 30 * day);
@@ -161,12 +162,12 @@ public class QueryTests(SqlServerFixture sql) : DatabaseTest(sql)
 
         Assert.Equal(2, result.DeliveriesDeleted);
         Assert.Equal(3, result.MessagesDeleted);
-        var remaining = await QueryAsync<Guid>("SELECT MessageId FROM broker.Messages");
+        var remaining = await QueryAsync<Guid>("SELECT MessageId FROM broker.Messages", r => Col<Guid>(r, 0));
         Assert.Equal(
             new[] { recentDeadLetter.MessageId, stillPending.MessageId, recentNoSubs.MessageId }.Order(),
             remaining.Order());
-        Assert.Equal(0, await ScalarAsync<int>("SELECT COUNT(*) FROM broker.DeliveryAttempts WHERE DeliveryId IN @ids",
-            new { ids = new[] { leased[oldCompleted.MessageId].DeliveryId, leased[oldDeadLetter.MessageId].DeliveryId } }));
+        Assert.Equal(0, await ScalarAsync<int>("SELECT COUNT(*) FROM broker.DeliveryAttempts WHERE DeliveryId IN (@d1, @d2)",
+            P("d1", leased[oldCompleted.MessageId].DeliveryId), P("d2", leased[oldDeadLetter.MessageId].DeliveryId)));
         Assert.Single(await GetDeadLettersAsync(leased[recentDeadLetter.MessageId].DeliveryId));
     }
 }

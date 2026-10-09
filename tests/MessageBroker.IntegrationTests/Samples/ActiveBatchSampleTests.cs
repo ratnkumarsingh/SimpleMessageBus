@@ -81,7 +81,7 @@ public sealed class ActiveBatchSampleTests(SqlServerFixture sql) : ApiTest(sql)
         Assert.Contains("already published", again.Output);
         Assert.Equal(1, await MessagesAsync());
         var stored = Assert.Single(await QueryAsync<(string Key, string Type, string Correlation, string Payload)>(
-            "SELECT IdempotencyKey, MessageType, CorrelationId, Payload FROM broker.Messages"));
+            "SELECT IdempotencyKey, MessageType, CorrelationId, Payload FROM broker.Messages", r => (Col<string>(r, 0), Col<string>(r, 1), Col<string>(r, 2), Col<string>(r, 3))));
         Assert.Equal(("job-S13-1", "OrderShipped.v1", "ORD-13"), (stored.Key, stored.Type, stored.Correlation));
         Assert.Contains("ORD-13", stored.Payload);
 
@@ -133,7 +133,7 @@ public sealed class ActiveBatchSampleTests(SqlServerFixture sql) : ApiTest(sql)
         var rerun = await RunScriptAsync(shell, "Example-NightlyJob.ps1", publisherKey, job);
         Assert.True(rerun.ExitCode == 0, rerun.Output);
         var notification = Assert.Single(await QueryAsync<(string Type, string Payload)>(
-            "SELECT MessageType, Payload FROM broker.Messages WHERE IdempotencyKey = N'nightly-import-2026-10-09'"));
+            "SELECT MessageType, Payload FROM broker.Messages WHERE IdempotencyKey = N'nightly-import-2026-10-09'", r => (Col<string>(r, 0), Col<string>(r, 1))));
         Assert.Equal("UserNotification", notification.Type);
         Assert.Contains("\"level\":\"Success\"", notification.Payload);
         Assert.Equal(3, await MessagesAsync());

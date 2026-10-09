@@ -57,7 +57,7 @@ public abstract class WebhookTest(SqlServerFixture sql) : ApiTest(sql)
     /// <summary>Skips the backoff of every Pending delivery of the subscription.</summary>
     protected Task MakeAllDueAsync(Guid subscriptionId) =>
         ExecAsync("UPDATE broker.Deliveries SET AvailableAt = DATEADD(second, -1, SYSUTCDATETIME()) WHERE SubscriptionId = @subscriptionId AND Status = 0",
-            new { subscriptionId });
+            P("subscriptionId", subscriptionId));
 
     protected IReadOnlyList<RecordedCall> Calls(string path = HookPath) => Endpoint.Calls(path);
 

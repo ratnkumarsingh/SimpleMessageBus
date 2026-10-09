@@ -148,7 +148,7 @@ public sealed class RestartTests(SqlServerFixture sql, ITestOutputHelper output)
         var recovered = await QueryAsync<DateTime>("""
             SELECT d.CompletedAt FROM broker.Deliveries d
             WHERE EXISTS (SELECT 1 FROM broker.DeliveryAttempts a WHERE a.DeliveryId = d.DeliveryId AND a.Outcome = 'LeaseExpired')
-            """);
+            """, r => Col<DateTime>(r, 0));
         Assert.Equal(orphaned, recovered.Count);
         var bound = TimeSpan.FromSeconds(LockSeconds + MaintenanceSeconds + RetrySeconds + 2); // + poll and send time
         Assert.All(recovered, completedAt => Assert.True(completedAt - restartedAt < bound,

@@ -46,7 +46,7 @@ public class ExpiryAndDeadLetterTests(SqlServerFixture sql) : DatabaseTest(sql)
         var freshId = (await GetDeliveriesForMessageAsync(fresh.MessageId)).Single().DeliveryId;
 
         // Lease the second one, then push both of the first two past their expiry.
-        await ExecAsync("UPDATE broker.Deliveries SET AvailableAt = DATEADD(minute, 1, SYSUTCDATETIME()) WHERE DeliveryId IN (@pendingId, @freshId)", new { pendingId, freshId });
+        await ExecAsync("UPDATE broker.Deliveries SET AvailableAt = DATEADD(minute, 1, SYSUTCDATETIME()) WHERE DeliveryId IN (@pendingId, @freshId)", P("pendingId", pendingId), P("freshId", freshId));
         var leased = Assert.Single(await Deliveries.LeaseAsync(sub.SubscriptionId, 1, "Pull", subscriber));
         Assert.Equal(leasedId, leased.DeliveryId);
         await BackdateAsync("Deliveries", "DeliveryId", pendingId, "ExpiresAt", 120);
@@ -139,7 +139,7 @@ public class ExpiryAndDeadLetterTests(SqlServerFixture sql) : DatabaseTest(sql)
         await ThrowsBrokerAsync(BrokerErrorKind.Conflict, () => Topics.DeleteAsync(topic.TopicId));
         await Subscriptions.DeleteAsync(sub.SubscriptionId);
 
-        var rows = await QueryAsync<DeliveryRow>("SELECT * FROM broker.Deliveries WHERE SubscriptionId = @id", new { id = sub.SubscriptionId });
+        var rows = await QueryAsync<DeliveryRow>("SELECT * FROM broker.Deliveries WHERE SubscriptionId = @id", DeliveryRow.Read, P("id", sub.SubscriptionId));
         Assert.All(rows, r => Assert.Equal(DeliveryStatus.Cancelled, r.State));
         Assert.Equal("Cancelled", Assert.Single(await GetAttemptsAsync(leased.DeliveryId)).Outcome);
         await ThrowsBrokerAsync(BrokerErrorKind.LeaseLost, () => Deliveries.AckAsync(leased.DeliveryId, leased.LockToken, null));
@@ -147,7 +147,7 @@ public class ExpiryAndDeadLetterTests(SqlServerFixture sql) : DatabaseTest(sql)
         await ThrowsBrokerAsync(BrokerErrorKind.NotFound, () => Subscriptions.DeleteAsync(sub.SubscriptionId));
 
         // The other subscription is untouched.
-        var kept = await QueryAsync<DeliveryRow>("SELECT * FROM broker.Deliveries WHERE SubscriptionId = @id", new { id = keep.SubscriptionId });
+        var kept = await QueryAsync<DeliveryRow>("SELECT * FROM broker.Deliveries WHERE SubscriptionId = @id", DeliveryRow.Read, P("id", keep.SubscriptionId));
         Assert.All(kept, r => Assert.Equal(DeliveryStatus.Pending, r.State));
 
         await Subscriptions.DeleteAsync(keep.SubscriptionId);

@@ -1,5 +1,5 @@
+using System.Data;
 using System.Text.RegularExpressions;
-using Dapper;
 using MessageBroker.Infrastructure.Data;
 using MessageBroker.IntegrationTests.Infrastructure;
 using Microsoft.Data.SqlClient;
@@ -20,8 +20,8 @@ public sealed partial class ReleaseScriptTests(SqlServerFixture sql) : IAsyncLif
 
     public async Task InitializeAsync()
     {
-        await using var master = new SqlConnection(sql.ConnectionStringFor("master"));
-        await master.ExecuteAsync($"CREATE DATABASE [{_databaseName}]");
+        await SqlHelper.ExecuteNonQueryAsync(sql.ConnectionStringFor("master"), CommandType.Text,
+            $"CREATE DATABASE [{_databaseName}]", CancellationToken.None);
     }
 
     public Task DisposeAsync() => sql.DropDatabaseAsync(_databaseName);
@@ -67,8 +67,8 @@ public sealed partial class ReleaseScriptTests(SqlServerFixture sql) : IAsyncLif
         var journal = await JournalAsync();
         Assert.DoesNotContain(second, journal);
         Assert.Single(journal);
-        await using var connection = new SqlConnection(ConnectionString);
-        Assert.Null(await connection.ExecuteScalarAsync<int?>("SELECT OBJECT_ID(N'broker.ReleaseProbe')"));
+        Assert.Null(await SqlHelper.ExecuteScalarAsync(ConnectionString, CommandType.Text,
+            "SELECT OBJECT_ID(N'broker.ReleaseProbe')", CancellationToken.None));
     }
 
     private Task ApplyReleaseScriptAsync() => ApplyAsync(ReleaseScript.Build());
@@ -78,22 +78,25 @@ public sealed partial class ReleaseScriptTests(SqlServerFixture sql) : IAsyncLif
     {
         await using var connection = new SqlConnection(ConnectionString);
         await connection.OpenAsync();
-        await connection.ExecuteAsync("SET QUOTED_IDENTIFIER OFF;"); // sqlcmd's default
+        await SqlHelper.ExecuteNonQueryAsync(connection, CommandType.Text, "SET QUOTED_IDENTIFIER OFF;", CancellationToken.None); // sqlcmd's default
         foreach (var batch in GoSeparator().Split(script).Where(b => !string.IsNullOrWhiteSpace(b)))
-            await connection.ExecuteAsync(batch, commandTimeout: 120);
+            await SqlHelper.ExecuteNonQueryAsync(connection, CommandType.Text, batch, commandTimeout: 120, CancellationToken.None);
     }
 
-    private async Task<List<string>> JournalAsync()
+    private Task<List<string>> JournalAsync() =>
+        ColumnAsync(ConnectionString, "SELECT ScriptName FROM broker.SchemaVersions ORDER BY Id");
+
+    private static async Task<List<string>> ColumnAsync(string connectionString, string sql)
     {
-        await using var connection = new SqlConnection(ConnectionString);
-        return (await connection.QueryAsync<string>("SELECT ScriptName FROM broker.SchemaVersions ORDER BY Id")).ToList();
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var reader = await SqlHelper.ExecuteReaderAsync(connection, CommandType.Text, sql, CancellationToken.None);
+        return [.. await SqlHelper.ReadAllAsync(reader, r => r.GetString(0), CancellationToken.None)];
     }
 
     /// <summary>Every object in the broker schema with its type, plus each column's definition.</summary>
-    private static async Task<List<string>> BrokerObjectsAsync(string connectionString)
-    {
-        await using var connection = new SqlConnection(connectionString);
-        return (await connection.QueryAsync<string>("""
+    private static Task<List<string>> BrokerObjectsAsync(string connectionString) =>
+        ColumnAsync(connectionString, """
             SELECT o.type COLLATE DATABASE_DEFAULT + ' ' + o.name COLLATE DATABASE_DEFAULT
             FROM sys.objects o
             WHERE o.schema_id = SCHEMA_ID(N'broker') AND o.is_ms_shipped = 0
@@ -109,8 +112,7 @@ public sealed partial class ReleaseScriptTests(SqlServerFixture sql) : IAsyncLif
             FROM sys.indexes i JOIN sys.tables t ON t.object_id = i.object_id
             WHERE t.schema_id = SCHEMA_ID(N'broker') AND i.name IS NOT NULL
             ORDER BY 1
-            """)).ToList();
-    }
+            """);
 
     [GeneratedRegex(@"^\s*GO\s*$", RegexOptions.Multiline | RegexOptions.IgnoreCase)]
     private static partial Regex GoSeparator();

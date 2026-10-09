@@ -73,8 +73,8 @@ public sealed class HealthAndMaintenanceTests(SqlServerFixture sql) : ApiTest(sq
 
         var leased = Assert.Single(await Deliveries.LeaseAsync(leasedSub.SubscriptionId, 1, "Pull", null));
         await LapseLeaseAsync(leased.DeliveryId);
-        var pending = (await QueryAsync<long>("SELECT DeliveryId FROM broker.Deliveries WHERE SubscriptionId = @id",
-            new { id = ttlSub.SubscriptionId })).Single();
+        var pending = (await QueryAsync<long>("SELECT DeliveryId FROM broker.Deliveries WHERE SubscriptionId = @id", r => Col<long>(r, 0),
+            P("id", ttlSub.SubscriptionId))).Single();
         await BackdateAsync("Deliveries", "DeliveryId", pending, "ExpiresAt", 120);
 
         await Api.Services.GetRequiredService<MaintenanceLoop>().RunOnceAsync(CancellationToken.None);
@@ -106,8 +106,8 @@ public sealed class HealthAndMaintenanceTests(SqlServerFixture sql) : ApiTest(sq
 
         await Api.Services.GetRequiredService<RetentionLoop>().RunOnceAsync(CancellationToken.None);
 
-        Assert.Equal(0, await ScalarAsync<int>("SELECT COUNT(*) FROM broker.Messages WHERE MessageId = @id", new { id = old.MessageId }));
-        Assert.Equal(0, await ScalarAsync<int>("SELECT COUNT(*) FROM broker.DeliveryAttempts WHERE DeliveryId = @oldDelivery", new { oldDelivery }));
+        Assert.Equal(0, await ScalarAsync<int>("SELECT COUNT(*) FROM broker.Messages WHERE MessageId = @id", P("id", old.MessageId)));
+        Assert.Equal(0, await ScalarAsync<int>("SELECT COUNT(*) FROM broker.DeliveryAttempts WHERE DeliveryId = @oldDelivery", P("oldDelivery", oldDelivery)));
         Assert.Single(await GetDeliveriesForMessageAsync(recent.MessageId));
     }
 }

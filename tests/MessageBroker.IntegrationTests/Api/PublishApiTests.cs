@@ -56,8 +56,8 @@ public sealed class PublishApiTests(SqlServerFixture sql) : ApiTest(sql)
         Assert.Equal(0, created.DeliveryCount);
 
         var row = (await QueryAsync<(string CorrelationId, string Payload, string? Properties)>(
-            "SELECT CorrelationId, Payload, Properties FROM broker.Messages WHERE MessageId = @id",
-            new { id = created.MessageId })).Single();
+            "SELECT CorrelationId, Payload, Properties FROM broker.Messages WHERE MessageId = @id", r => (Col<string>(r, 0), Col<string>(r, 1), Col<string?>(r, 2)),
+            P("id", created.MessageId))).Single();
         Assert.Equal(created.MessageId.ToString(), row.CorrelationId);
         Assert.Equal("""{"paymentId":"PAY-9"}""", row.Payload);
         Assert.Null(row.Properties);

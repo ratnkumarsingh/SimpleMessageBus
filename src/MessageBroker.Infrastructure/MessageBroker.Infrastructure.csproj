@@ -3,7 +3,6 @@
     <ProjectReference Include="..\MessageBroker.Application\MessageBroker.Application.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Dapper" />
     <PackageReference Include="Microsoft.Data.SqlClient" />
     <PackageReference Include="dbup-sqlserver" />
   </ItemGroup>

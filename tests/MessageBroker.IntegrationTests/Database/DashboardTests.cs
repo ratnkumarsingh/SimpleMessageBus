@@ -12,7 +12,7 @@ public class DashboardTests(SqlServerFixture sql) : DatabaseTest(sql)
 
     private Task SetStatusAsync(Guid subscriptionId, Guid messageId, DeliveryStatus status) =>
         ExecAsync("UPDATE broker.Deliveries SET Status = @status WHERE SubscriptionId = @subscriptionId AND MessageId = @messageId",
-            new { status = (byte)status, subscriptionId, messageId });
+            P("status", (byte)status), P("subscriptionId", subscriptionId), P("messageId", messageId));
 
     /// <summary>Leases the one due delivery of a pull subscription.</summary>
     private async Task<LeasedDeliveryRecord> LeaseOneAsync(Guid subscriptionId, Guid subscriber) =>
@@ -35,7 +35,7 @@ public class DashboardTests(SqlServerFixture sql) : DatabaseTest(sql)
 
         // A message from two hours ago is outside the window.
         var old = await PublishAsync(topic.Name, publisher);
-        await ExecAsync("UPDATE broker.Messages SET CreatedAt = DATEADD(hour, -2, CreatedAt) WHERE MessageId = @id", new { id = old.MessageId });
+        await ExecAsync("UPDATE broker.Messages SET CreatedAt = DATEADD(hour, -2, CreatedAt) WHERE MessageId = @id", P("id", old.MessageId));
 
         var overview = await Dashboard.GetOverviewAsync(60);
 
@@ -96,8 +96,8 @@ public class DashboardTests(SqlServerFixture sql) : DatabaseTest(sql)
         var a1 = await PublishAsync(topicA.Name, publisherA, correlationId: "ORDER-1");
         var a2 = await PublishAsync(topicA.Name, publisherA, correlationId: "ORDER-2");
         var b1 = await PublishAsync(topicB.Name, publisherB, correlationId: "ORDER-1");
-        await ExecAsync("UPDATE broker.Messages SET MessageType = 'Refund.v1' WHERE MessageId = @id", new { id = a2.MessageId });
-        await ExecAsync("UPDATE broker.Messages SET CreatedAt = DATEADD(day, -1, CreatedAt) WHERE MessageId = @id", new { id = a1.MessageId });
+        await ExecAsync("UPDATE broker.Messages SET MessageType = 'Refund.v1' WHERE MessageId = @id", P("id", a2.MessageId));
+        await ExecAsync("UPDATE broker.Messages SET CreatedAt = DATEADD(day, -1, CreatedAt) WHERE MessageId = @id", P("id", a1.MessageId));
 
         async Task<Guid[]> Ids(MessageSearchQuery q) => (await Dashboard.SearchMessagesAsync(q)).Select(m => m.MessageId).ToArray();
 
@@ -133,7 +133,7 @@ public class DashboardTests(SqlServerFixture sql) : DatabaseTest(sql)
         {
             await SetStatusAsync(a.SubscriptionId, m, sa);
             await SetStatusAsync(b.SubscriptionId, m, sb);
-            var expected = await ScalarAsync<string>("SELECT Status FROM broker.vw_MessageStatus WHERE MessageId = @m", new { m });
+            var expected = await ScalarAsync<string>("SELECT Status FROM broker.vw_MessageStatus WHERE MessageId = @m", P("m", m));
 
             Assert.Equal(expected, (await Dashboard.SearchMessagesAsync(new())).Single().Status);
             Assert.Single(await Dashboard.SearchMessagesAsync(new(Status: expected)));
@@ -266,7 +266,7 @@ public class DashboardTests(SqlServerFixture sql) : DatabaseTest(sql)
     public async Task D39_Indexes()
     {
         var indexes = await QueryAsync<string>("SELECT name FROM sys.indexes WHERE object_id IN " +
-            "(OBJECT_ID('broker.Messages'), OBJECT_ID('broker.DeadLetters'), OBJECT_ID('broker.DeliveryAttempts'))");
+            "(OBJECT_ID('broker.Messages'), OBJECT_ID('broker.DeadLetters'), OBJECT_ID('broker.DeliveryAttempts'))", r => Col<string>(r, 0));
         Assert.Contains("IX_Messages_Topic", indexes);
         Assert.Contains("IX_DeadLetters_DeadLetteredAt", indexes);
         Assert.Contains("IX_DeliveryAttempts_EndedAt", indexes);

@@ -17,7 +17,7 @@ This is the Phase 1 build: a single broker host backed by one SQL Server databas
 - **Security.** API-key authentication, per-topic/subscription permissions, a webhook host allowlist, and webhook secrets encrypted with ASP.NET Core Data Protection.
 - **Operations.** Health checks (`/health/live`, `/health/ready`), structured JSON logs, retention purge, and Swagger UI / Scalar API docs.
 - **Admin dashboard.** A Blazor app that shows throughput, backlog, circuit state and every message's delivery history, updated live over SignalR, with dead-letter requeue.
-- **Data access through stored procedures and views** with Dapper; no ORM. The schema is deployed by DbUp or as a single release script.
+- **Data access through stored procedures and views** with plain ADO.NET (an in-repo `SqlHelper` and hand-written mappers); no ORM. The schema is deployed by DbUp or as a single release script.
 
 ## Repository layout
 
@@ -26,7 +26,7 @@ This is the Phase 1 build: a single broker host backed by one SQL Server databas
 | `src/MessageBroker.Api` | The broker host: REST API (`/api/v1`), SignalR hub (`/hubs/deliveries`), health checks |
 | `src/MessageBroker.Application` | Services, options and repository interfaces |
 | `src/MessageBroker.Domain` | Enums, validation and the delivery state machine |
-| `src/MessageBroker.Infrastructure` | Dapper repositories, schema deployer, Data Protection |
+| `src/MessageBroker.Infrastructure` | ADO.NET repositories (`SqlHelper`, `RecordMap` mappers), schema deployer, Data Protection |
 | `src/MessageBroker.Worker` | Dispatcher: lease loop, webhook and SignalR channels, maintenance and retention |
 | `src/MessageBroker.Contracts` | Shared models and a client library (`BrokerClient`, `SignalRDeliveryListener`, webhook signature helpers) |
 | `src/MessageBroker.Dashboard` | Admin dashboard (Blazor Server): overview, message browser, dead letters, topology |

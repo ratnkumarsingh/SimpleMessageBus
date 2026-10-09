@@ -272,7 +272,7 @@ public sealed class WebhookTests(SqlServerFixture sql) : WebhookTest(sql)
             await Deliveries.AckAsync(d.DeliveryId, d.LockToken, subscriber);
 
         var counts = await QueryAsync<(Guid SubscriptionId, byte Status, int Attempts)>(
-            "SELECT SubscriptionId, Status, AttemptCount FROM broker.Deliveries");
+            "SELECT SubscriptionId, Status, AttemptCount FROM broker.Deliveries", r => (Col<Guid>(r, 0), Col<byte>(r, 1), Col<int>(r, 2)));
         Assert.All(counts.Where(c => c.SubscriptionId == pull.SubscriptionId), c => Assert.Equal(((byte)2, 1), (c.Status, c.Attempts)));
         Assert.All(counts.Where(c => c.SubscriptionId == webhook.SubscriptionId), c => Assert.Equal(((byte)0, 2), (c.Status, c.Attempts)));
     }

@@ -62,8 +62,8 @@ public class LeaseAndSettleTests(SqlServerFixture sql) : DatabaseTest(sql)
         var expired = await PublishAsync(topic, publisher);
         var futureId = (await GetDeliveriesForMessageAsync(future.MessageId)).Single().DeliveryId;
         var expiredId = (await GetDeliveriesForMessageAsync(expired.MessageId)).Single().DeliveryId;
-        await ExecAsync("UPDATE broker.Deliveries SET AvailableAt = DATEADD(minute, 5, SYSUTCDATETIME()) WHERE DeliveryId = @futureId", new { futureId });
-        await ExecAsync("UPDATE broker.Deliveries SET ExpiresAt = DATEADD(second, -1, SYSUTCDATETIME()) WHERE DeliveryId = @expiredId", new { expiredId });
+        await ExecAsync("UPDATE broker.Deliveries SET AvailableAt = DATEADD(minute, 5, SYSUTCDATETIME()) WHERE DeliveryId = @futureId", P("futureId", futureId));
+        await ExecAsync("UPDATE broker.Deliveries SET ExpiresAt = DATEADD(second, -1, SYSUTCDATETIME()) WHERE DeliveryId = @expiredId", P("expiredId", expiredId));
 
         var batch1 = await Deliveries.LeaseAsync(sub.SubscriptionId, 1, "Pull", subscriber);
         Assert.Equal(first.MessageId, Assert.Single(batch1).MessageId);
@@ -247,20 +247,20 @@ public class LeaseAndSettleTests(SqlServerFixture sql) : DatabaseTest(sql)
 
         // Round 2: the retried third fails again together and reaches MaxAttempts.
         await ExecAsync("UPDATE broker.Deliveries SET AvailableAt = SYSUTCDATETIME() WHERE SubscriptionId = @id AND Status = 0",
-            new { id = sub.SubscriptionId });
+            P("id", sub.SubscriptionId));
         var round2 = await Deliveries.LeaseAsync(sub.SubscriptionId, count, "Pull", subscriber);
         Assert.Equal(count / 3, round2.Count);
         await Task.WhenAll(round2.Select(d =>
             Deliveries.NackAsync(d.DeliveryId, d.LockToken, subscriber, new FailureDetails("E1", "retry"))));
 
         var states = await QueryAsync<(byte Status, int Count)>(
-            "SELECT Status, COUNT(*) FROM broker.Deliveries WHERE SubscriptionId = @id GROUP BY Status ORDER BY Status",
-            new { id = sub.SubscriptionId });
+            "SELECT Status, COUNT(*) FROM broker.Deliveries WHERE SubscriptionId = @id GROUP BY Status ORDER BY Status", r => (Col<byte>(r, 0), Col<int>(r, 1)),
+            P("id", sub.SubscriptionId));
         Assert.Equal([((byte)DeliveryStatus.Completed, count / 3), ((byte)DeliveryStatus.DeadLettered, 2 * count / 3)], states);
         Assert.Equal(0, await ScalarAsync<int>("""
             SELECT COUNT(*) FROM broker.DeliveryAttempts a JOIN broker.Deliveries d ON d.DeliveryId = a.DeliveryId
             WHERE d.SubscriptionId = @id AND a.EndedAt IS NULL
-            """, new { id = sub.SubscriptionId }));
+            """, P("id", sub.SubscriptionId)));
     }
 
     [Fact(DisplayName = "D30 A delivery published this millisecond counts as due for the push lease loop (datetime2(3) rounding)")]
@@ -269,7 +269,7 @@ public class LeaseAndSettleTests(SqlServerFixture sql) : DatabaseTest(sql)
         var (topic, publisher, subscriber) = await ArrangeTopicAsync();
         var sub = await CreateSubscriptionAsync(topic.TopicId, subscriber, mode: "Webhook");
         await PublishAsync(topic.Name, publisher);
-        var deliveryId = (await QueryAsync<long>("SELECT DeliveryId FROM broker.Deliveries")).Single();
+        var deliveryId = (await QueryAsync<long>("SELECT DeliveryId FROM broker.Deliveries", r => Col<long>(r, 0))).Single();
 
         // Store AvailableAt the way publish does, at a moment past the middle of a millisecond, so it
         // rounds up to a time after the clock; then read the view in the same batch.
@@ -284,7 +284,7 @@ public class LeaseAndSettleTests(SqlServerFixture sql) : DatabaseTest(sql)
                 END
                 UPDATE broker.Deliveries SET AvailableAt = CAST(@t AS datetime2(3)) WHERE DeliveryId = @deliveryId;
                 SELECT HasDueDeliveries FROM broker.vw_ActivePushSubscriptions WHERE SubscriptionId = @subscriptionId;
-                """, new { deliveryId, subscriptionId = sub.SubscriptionId });
+                """, P("deliveryId", deliveryId), P("subscriptionId", sub.SubscriptionId));
             Assert.True(due, $"Not due on try {i + 1}");
         }
     }

@@ -1,7 +1,7 @@
 namespace MessageBroker.Application.Persistence;
 
 // Rows returned by the stored procedures. Property names match the result-set column names, and
-// every datetime2 value is UTC (the Dapper type handler stamps DateTimeKind.Utc).
+// every datetime2 value is UTC (RecordMap in Infrastructure stamps DateTimeKind.Utc when reading).
 
 public sealed record ApplicationRecord
 {

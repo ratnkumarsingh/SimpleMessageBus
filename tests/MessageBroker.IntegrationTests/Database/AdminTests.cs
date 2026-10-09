@@ -29,7 +29,7 @@ public class AdminTests(SqlServerFixture sql) : DatabaseTest(sql)
         Assert.Null(await Apps.GetKeyByPrefixAsync("aaaaaaaaaaaa"));
 
         var k3 = await Apps.CreateKeyAsync(Guid.NewGuid(), app, "cccccccccccc", Hash(3), DateTime.UtcNow.AddHours(1));
-        await ExecAsync("UPDATE broker.ApiKeys SET ExpiresAt = DATEADD(second, -1, SYSUTCDATETIME()) WHERE KeyId = @id", new { id = k3.KeyId });
+        await ExecAsync("UPDATE broker.ApiKeys SET ExpiresAt = DATEADD(second, -1, SYSUTCDATETIME()) WHERE KeyId = @id", P("id", k3.KeyId));
         Assert.Null(await Apps.GetKeyByPrefixAsync("cccccccccccc"));
 
         await Apps.SetActiveAsync(app, false);
