@@ -30,7 +30,7 @@ This is the Phase 1 build: a single broker host backed by one SQL Server databas
 | `src/MessageBroker.Worker` | Dispatcher: lease loop, webhook and SignalR channels, maintenance and retention |
 | `src/MessageBroker.Contracts` | Shared models and a client library (`BrokerClient`, `SignalRDeliveryListener`, webhook signature helpers) |
 | `src/MessageBroker.Dashboard` | Admin dashboard (Blazor Server): overview, message browser, dead letters, topology |
-| `db/` | Migrations, stored procedures, views, functions and `build-release-script.ps1` |
+| `db/` | Migrations, stored procedures, views, functions, `build-release-script.ps1`, and the full install script `BrokerDb_Full.sql` with `install-database.ps1` (runbook 2.2 C) |
 | `samples/` | Publisher and subscriber samples (see below) |
 | `tests/` | Unit tests, integration tests against SQL Server, dashboard component tests (bUnit), and an NBomber load test |
 | `docs/` | Runbook, user guide, acceptance mapping and spec deviations |
