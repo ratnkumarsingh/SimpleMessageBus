@@ -144,6 +144,7 @@ Settings live in the `Broker` section of `appsettings.json`; any of them can be 
 
 - [Operations runbook](docs/runbook.md): installation, deployment, monitoring, onboarding and troubleshooting
 - [User guide](docs/user-guide/MessageBroker-User-Guide.pdf) ([HTML](docs/user-guide/user-guide.html))
+- [Quick start for producers and consumers](docs/user-guide/MessageBroker-Quick-Start.pdf) ([HTML](docs/user-guide/quick-start.html)): simple steps for SignalR, Webhook and Long polling
 - [Acceptance criteria](docs/acceptance.md): how each acceptance criterion is tested
 - [Spec deviations](docs/spec-deviations.md): where and why the build departs from the Phase 1 specification
 

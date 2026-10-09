@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Internal Message Broker — Quick Start</title>
+<style>
+  @page { size: A4; margin: 18mm 17mm 20mm 17mm; }
+  :root { --ink:#1d2330; --muted:#5b6475; --line:#d9dee7; --accent:#1f5fbf; --soft:#f3f6fb; --warn:#9a5b00; --warnbg:#fff6e6; --ok:#17733f; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: var(--ink); font-size: 10.5pt; line-height: 1.48; margin: 0; }
+  h1 { font-size: 20pt; margin: 0 0 6pt; color: var(--accent); }
+  h2 { font-size: 16pt; color: var(--accent); border-bottom: 2px solid var(--accent); padding-bottom: 3pt; margin: 0 0 10pt; }
+  h3 { font-size: 12pt; margin: 12pt 0 5pt; }
+  p { margin: 0 0 8pt; }
+  ul, ol { margin: 0 0 9pt; padding-left: 18pt; }
+  li { margin-bottom: 3pt; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 9.5pt; background: var(--soft); padding: 0 2pt; border-radius: 2pt; }
+  pre { font-family: Consolas, "Courier New", monospace; font-size: 8.5pt; line-height: 1.35; background: #f6f8fa; border: 1px solid var(--line); border-left: 3px solid var(--accent); padding: 7pt 9pt; margin: 5pt 0 4pt; white-space: pre-wrap; word-break: break-word; page-break-inside: avoid; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  table { border-collapse: collapse; width: 100%; margin: 4pt 0 10pt; font-size: 9.6pt; }
+  tr { page-break-inside: avoid; }
+  th, td { border: 1px solid var(--line); padding: 3.5pt 6pt; text-align: left; vertical-align: top; }
+  th { background: var(--soft); font-weight: 600; }
+  .chapter { page-break-before: always; }
+  .note, .warn, .tip { border-radius: 3pt; padding: 7pt 10pt; margin: 8pt 0 12pt; page-break-inside: avoid; }
+  .note { background: var(--soft); border-left: 3px solid var(--accent); }
+  .warn { background: var(--warnbg); border-left: 3px solid var(--warn); }
+  .tip { background: #eaf7ef; border-left: 3px solid var(--ok); }
+  .cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; }
+  .cover .kicker { color: var(--muted); letter-spacing: .12em; text-transform: uppercase; font-size: 9.5pt; }
+  .cover h1 { font-size: 30pt; margin: 8pt 0 4pt; color: var(--ink); }
+  .cover .sub { font-size: 14pt; color: var(--accent); margin-bottom: 26pt; }
+  .cover .meta { color: var(--muted); font-size: 10pt; border-top: 1px solid var(--line); padding-top: 10pt; max-width: 125mm; }
+  .cover ol { margin-top: 6pt; }
+  .step { border: 1px solid var(--line); border-radius: 4pt; padding: 6pt 10pt 4pt; margin: 0 0 8pt; page-break-inside: avoid; }
+  .step .num { display: inline-block; background: var(--accent); color: #fff; font-weight: 600; font-size: 9.5pt; border-radius: 10pt; padding: 1pt 8pt; margin-right: 6pt; }
+  .step .title { font-weight: 600; font-size: 11.5pt; }
+  .step p { margin: 3pt 0 4pt; }
+  .when { background: var(--soft); border-radius: 3pt; padding: 7pt 10pt; margin: 0 0 12pt; }
+  .when b { color: var(--accent); }
+  .do li::marker { content: "✔  "; color: var(--ok); }
+  .dont li::marker { content: "✘  "; color: #b3261e; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12pt; }
+  .two h3 { margin-top: 4pt; }
+  .diagram { margin: 6pt 0 14pt; page-break-inside: avoid; }
+  .keep { page-break-inside: avoid; }
+  .small { font-size: 9pt; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- ============================== COVER ============================== -->
+<section class="cover">
+  <div class="kicker">Internal Message Broker · Phase 1</div>
+  <h1>Quick Start</h1>
+  <div class="sub">Simple steps for producers and consumers</div>
+  <div class="meta">
+    <p>This short guide tells you <b>what to do</b> to send and receive messages through the broker. It uses plain words and small .NET examples.</p>
+    <p>Inside:</p>
+    <ol>
+      <li>The idea in one page</li>
+      <li>Before you start: what to ask the admin for</li>
+      <li>Producer: how to send a message</li>
+      <li>Rules for every consumer</li>
+      <li>Consumer with SignalR</li>
+      <li>Consumer with Webhook</li>
+      <li>Consumer with Long polling (Pull)</li>
+      <li>Which one should I pick?</li>
+      <li>When something goes wrong</li>
+    </ol>
+    <p class="small">For every detail and option, see the full User Guide (MessageBroker-User-Guide.pdf).</p>
+  </div>
+</section>
+
+<!-- ============================== 1. IDEA ============================== -->
+<section class="chapter">
+  <h2>1. The idea in one page</h2>
+  <p>A <b>producer</b> is an app that sends messages. A <b>consumer</b> is an app that receives them. They never talk to each other directly. The <b>broker</b> sits in the middle: it stores every message safely and hands it to each consumer that wants it.</p>
+
+  <div class="diagram">
+  <svg viewBox="0 0 640 210" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif" font-size="12">
+    <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1f5fbf"/></marker></defs>
+    <rect x="10" y="80" width="105" height="50" rx="6" fill="#f3f6fb" stroke="#1f5fbf"/>
+    <text x="62" y="102" text-anchor="middle" font-weight="600">Producer</text>
+    <text x="62" y="119" text-anchor="middle" fill="#5b6475" font-size="10.5">sends a message</text>
+    <rect x="160" y="20" width="300" height="170" rx="8" fill="#fbfcfe" stroke="#d9dee7" stroke-dasharray="4 3"/>
+    <text x="310" y="40" text-anchor="middle" font-weight="600" fill="#1f5fbf">Broker</text>
+    <rect x="180" y="85" width="90" height="40" rx="5" fill="#fff" stroke="#1f5fbf"/>
+    <text x="225" y="104" text-anchor="middle" font-weight="600">Topic</text>
+    <text x="225" y="118" text-anchor="middle" fill="#5b6475" font-size="10">"payments"</text>
+    <rect x="320" y="52" width="120" height="34" rx="5" fill="#fff" stroke="#1f5fbf"/>
+    <text x="380" y="73" text-anchor="middle">Subscription A</text>
+    <rect x="320" y="96" width="120" height="34" rx="5" fill="#fff" stroke="#1f5fbf"/>
+    <text x="380" y="117" text-anchor="middle">Subscription B</text>
+    <rect x="320" y="140" width="120" height="34" rx="5" fill="#fff" stroke="#1f5fbf"/>
+    <text x="380" y="161" text-anchor="middle">Subscription C</text>
+    <line x1="115" y1="105" x2="178" y2="105" stroke="#1f5fbf" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="270" y1="100" x2="318" y2="70" stroke="#1f5fbf" stroke-width="1.3" marker-end="url(#a)"/>
+    <line x1="270" y1="105" x2="318" y2="113" stroke="#1f5fbf" stroke-width="1.3" marker-end="url(#a)"/>
+    <line x1="270" y1="110" x2="318" y2="155" stroke="#1f5fbf" stroke-width="1.3" marker-end="url(#a)"/>
+    <rect x="510" y="52" width="120" height="34" rx="5" fill="#f3f6fb" stroke="#1f5fbf"/>
+    <text x="570" y="73" text-anchor="middle">Consumer · SignalR</text>
+    <rect x="510" y="96" width="120" height="34" rx="5" fill="#f3f6fb" stroke="#1f5fbf"/>
+    <text x="570" y="117" text-anchor="middle">Consumer · Webhook</text>
+    <rect x="510" y="140" width="120" height="34" rx="5" fill="#f3f6fb" stroke="#1f5fbf"/>
+    <text x="570" y="161" text-anchor="middle">Consumer · Pull</text>
+    <line x1="440" y1="69" x2="508" y2="69" stroke="#1f5fbf" stroke-width="1.3" marker-end="url(#a)"/>
+    <line x1="440" y1="113" x2="508" y2="113" stroke="#1f5fbf" stroke-width="1.3" marker-end="url(#a)"/>
+    <line x1="508" y1="157" x2="442" y2="157" stroke="#1f5fbf" stroke-width="1.3" marker-end="url(#a)"/>
+    <text x="475" y="152" text-anchor="middle" fill="#5b6475" font-size="9.5">asks</text>
+  </svg>
+  </div>
+
+  <p>The producer sends one message to a <b>topic</b>. The broker makes one copy for every <b>subscription</b> on that topic. Each consumer owns a subscription and gets its own copy in one of three ways: the broker <b>pushes</b> it over SignalR, the broker <b>calls</b> the consumer's web address (Webhook), or the consumer <b>asks</b> for it (Pull with long polling).</p>
+
+  <h3>Words you will see</h3>
+  <table>
+    <tr><th style="width:26%">Word</th><th>Meaning</th></tr>
+    <tr><td>Topic</td><td>A named channel for one kind of news, for example <code>payments</code>. Producers send to a topic.</td></tr>
+    <tr><td>Message</td><td>What the producer sends: a type name (like <code>PaymentProcessed.v1</code>) and a JSON payload with the data.</td></tr>
+    <tr><td>Subscription</td><td>A consumer's "mailbox" on a topic. Every subscription gets its own copy of every message.</td></tr>
+    <tr><td>Delivery</td><td>One copy of a message, on its way to one subscription.</td></tr>
+    <tr><td>ACK</td><td>"Done, thank you." The consumer tells the broker the delivery was handled. It will not come again.</td></tr>
+    <tr><td>NACK</td><td>"It failed, try again later." The broker waits a little and delivers it again.</td></tr>
+    <tr><td>Lease (lock)</td><td>The time a consumer has to finish a delivery. If it does not answer in time, the broker gives the delivery out again.</td></tr>
+    <tr><td>Dead-letter queue (DLQ)</td><td>Where a message goes when it failed too many times or the consumer said "this can never work". Nothing is lost; the admin can look at it and send it again.</td></tr>
+    <tr><td>API key</td><td>Your app's password for the broker. Every call carries it.</td></tr>
+  </table>
+
+  <div class="note"><b>Good to know:</b> the broker may sometimes deliver the same message <b>twice</b> (for example after a network error). This is normal. Every consumer must be able to handle a repeat safely (see chapter 4).</div>
+</section>
+
+<!-- ============================== 2. ASK THE ADMIN ============================== -->
+<section class="chapter">
+  <h2>2. Before you start: ask the admin</h2>
+  <p>You do not create topics, keys or subscriptions yourself. The broker admin does that for you. Tell the admin what your app is, and you will get back what you need:</p>
+
+  <table>
+    <tr><th style="width:24%">You are…</th><th style="width:38%">Tell the admin</th><th>You get back</th></tr>
+    <tr><td><b>Producer</b></td><td>Your app's name and which topic you want to send to.</td><td>An <b>API key</b> and the <b>topic name</b>.</td></tr>
+    <tr><td><b>Consumer · SignalR</b></td><td>Your app's name, the topic, and "SignalR mode".</td><td>An <b>API key</b> and a <b>subscription ID</b> (a GUID).</td></tr>
+    <tr><td><b>Consumer · Webhook</b></td><td>Your app's name, the topic, "Webhook mode", and your <b>HTTPS address</b>, for example <code>https://billing.internal/webhooks/payments</code>.</td><td>An <b>API key</b>, a <b>subscription ID</b> and a <b>webhook secret</b> (used to check that calls really come from the broker).</td></tr>
+    <tr><td><b>Consumer · Pull</b></td><td>Your app's name, the topic, and "Pull mode".</td><td>An <b>API key</b> and a <b>subscription ID</b>.</td></tr>
+  </table>
+  <p>You also need the broker's address, for example <code>https://broker.internal/</code>.</p>
+
+  <div class="warn"><b>Keep secrets secret.</b> The API key and the webhook secret are shown <b>only once</b>. Put them in your secret store (Key Vault, environment settings). Never put them in source code or Git, and never write them to logs.</div>
+
+  <h3>Add the client package (all apps)</h3>
+  <p>.NET apps use the <code>MessageBroker.Contracts</code> package. It has the ready-made client, the SignalR listener and the webhook signature checker. Add it to your project, then put the broker settings in configuration:</p>
+<pre><code>// appsettings.json (the key itself comes from your secret store)
+"Broker": { "Url": "https://broker.internal/", "ApiKey": "&lt;from secret store&gt;" }</code></pre>
+</section>
+
+<!-- ============================== 3. PRODUCER ============================== -->
+<section class="chapter">
+  <h2>3. Producer: how to send a message</h2>
+  <p>Sending is one HTTP call. The broker answers only after the message is safely stored.</p>
+
+  <div class="step">
+    <span class="num">Step 1</span><span class="title">Register the broker client</span>
+    <p>In <code>Program.cs</code>, register <code>BrokerClient</code> with the broker address and your API key.</p>
+<pre><code>builder.Services.AddBrokerClient(o =&gt;
+{
+    o.BaseAddress = new Uri(builder.Configuration["Broker:Url"]!);
+    o.ApiKey      = builder.Configuration["Broker:ApiKey"]!;
+});</code></pre>
+  </div>
+
+  <div class="step">
+    <span class="num">Step 2</span><span class="title">Build the message</span>
+    <p>Give it a <b>type name with a version</b> (<code>PaymentProcessed.v1</code>) and put your data in the <b>payload</b>. Keep it small (under 256 KB) and do not put passwords or secrets in it. The <b>correlation ID</b> is optional: use your order or request ID so the whole flow can be traced later.</p>
+<pre><code>var request = new PublishRequest
+{
+    MessageType   = "PaymentProcessed.v1",
+    CorrelationId = payment.OrderId,
+    Payload       = JsonSerializer.SerializeToElement(
+                        new { payment.PaymentId, payment.Amount })
+};</code></pre>
+  </div>
+
+  <div class="step">
+    <span class="num">Step 3</span><span class="title">Send it, with an idempotency key</span>
+    <p>The <b>idempotency key</b> is a name for this business event, for example <code>payment-PAY-123-processed</code>. If you send the same key twice, the broker keeps only the first one. So you can safely send again after an error without making a duplicate.</p>
+<pre><code>var result = await broker.PublishAsync("payments", request,
+    idempotencyKey: $"payment-{payment.PaymentId}-processed", ct: ct);
+
+// result.MessageId     → the new message's ID (log it for tracing)
+// result.IsDuplicate   → true if this key was already sent before (still OK)</code></pre>
+  </div>
+
+  <div class="step">
+    <span class="num">Step 4</span><span class="title">Look at the answer</span>
+    <table style="margin-bottom:4pt">
+      <tr><th style="width:30%">Answer</th><th>What it means → what you do</th></tr>
+      <tr><td><b>201 Created</b></td><td>Stored. You are done.</td></tr>
+      <tr><td><b>200 OK</b></td><td>Already sent earlier with this key. Treat it as success.</td></tr>
+      <tr><td><b>400 / 413</b></td><td>The message is wrong or too big. Fix it. Do not just send it again.</td></tr>
+      <tr><td><b>401 / 403 / 404</b></td><td>Wrong key, no permission, or no such topic. Check your settings or ask the admin.</td></tr>
+      <tr><td><b>503</b>, timeout, network error</td><td>The broker is busy or down. <b>Try again later with the same key</b> (wait 1, 2, 4, 8… seconds).</td></tr>
+    </table>
+    <p class="small">With the .NET client, errors arrive as <code>BrokerApiException</code>. Its <code>IsTransient</code> property is true when it is safe to try again.</p>
+  </div>
+
+  <div class="two">
+    <div>
+      <h3>Do</h3>
+      <ul class="do">
+        <li>Always send an idempotency key.</li>
+        <li>Retry only on 503, timeouts and network errors.</li>
+        <li>Put a version in the type name (<code>.v1</code>, <code>.v2</code>).</li>
+        <li>Save the message in your own database first (an "outbox" table) if losing it would be bad.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Don't</h3>
+      <ul class="dont">
+        <li>Don't retry 4xx errors unchanged.</li>
+        <li>Don't put secrets or large files in the payload.</li>
+        <li>Don't log your API key.</li>
+        <li>Don't expect consumers to get messages in exact order.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== 4. CONSUMER RULES ============================== -->
+<section class="chapter">
+  <h2>4. Rules for every consumer</h2>
+  <p>Whatever way you choose to receive (SignalR, Webhook or Pull), follow these five rules.</p>
+  <ol>
+    <li><b>Be ready for repeats.</b> The same message can arrive twice. Save the <code>messageId</code> of every message you have handled (in your database, in the same transaction as your work). If you see it again, just say "done" (ACK) and do nothing else.</li>
+    <li><b>Say "done" only after your work is saved.</b> If you ACK first and then crash, the message is lost for you.</li>
+    <li><b>Answer in time.</b> Each delivery has a deadline, <code>lockedUntil</code>. After it, the broker thinks you failed and sends the delivery again. For long work, ask for more time (renew).</li>
+    <li><b>NACK to try again, dead-letter to give up.</b> A temporary problem (database busy, other service down)? NACK, and the broker tries again later. A message that can never work (bad data, unknown type)? NACK with <i>dead-letter</i>, and it goes straight to the DLQ.</li>
+    <li><b>Never log the payload or keys.</b> Log <code>messageId</code>, <code>correlationId</code> and <code>deliveryId</code> instead.</li>
+  </ol>
+
+  <h3>What a delivery looks like</h3>
+  <p>All three ways give you the same JSON:</p>
+<pre><code>{
+  "deliveryId":  81234,                                   ← used to ACK / NACK / renew
+  "lockToken":   "2c9a0f4e-5d71-4b0e-9b77-0c4b9a2f1e11",   ← proves this delivery is yours right now
+  "lockedUntil": "2026-10-08T12:31:05Z",                  ← answer before this time (UTC)
+  "attempt":     1,                                       ← 1 the first time, 2 the second time, …
+  "message": {
+    "messageId":     "01a11b48-b86f-784f-a72d-8e1bc7526202",  ← check this for repeats
+    "messageType":   "PaymentProcessed.v1",
+    "correlationId": "ORDER-48213",
+    "createdAt":     "2026-10-08T12:30:04Z",
+    "payload":       { "paymentId": "PAY-12345", "amount": 1500.00 }
+  }
+}</code></pre>
+
+  <h3>How many times does the broker try?</h3>
+  <p>By default, 4 times, waiting about 30 s, then 60 s, then 120 s between tries. After the last failed try, the message goes to the DLQ. If your app may be down for longer, ask the admin to give your subscription more tries.</p>
+</section>
+
+<!-- ============================== 5. SIGNALR ============================== -->
+<section class="chapter">
+  <h2>5. Consumer with SignalR</h2>
+  <div class="when"><b>Choose SignalR when</b> your app cannot offer a web address the broker can call (desktop app, behind a firewall, Blazor Server), or you want messages <b>instantly</b>. Your app opens one connection to the broker and keeps it open; the broker pushes each message down that connection.</div>
+
+  <div class="step">
+    <span class="num">Step 1</span><span class="title">Get your details from the admin</span>
+    <p>You need the broker address, your <b>API key</b> and your <b>subscription ID</b>.</p>
+  </div>
+
+  <div class="step">
+    <span class="num">Step 2</span><span class="title">Write the handler: what to do with one message</span>
+    <p>Return <code>DeliveryResult.Ack</code> when the work is saved. Return <code>DeliveryResult.Fail(...)</code> to try again later, or add <code>deadLetter: true</code> to give up on it. If your code throws an exception, that counts as "try again".</p>
+<pre><code>async Task&lt;DeliveryResult&gt; HandleAsync(Delivery delivery, CancellationToken ct)
+{
+    var type = delivery.Message.MessageType;
+    if (type != "PaymentProcessed.v1")
+        return DeliveryResult.Fail("UnknownType", type, deadLetter: true);   // give up
+
+    await ProcessOnceAsync(delivery, ct);       // your work (skips repeats)
+    return DeliveryResult.Ack;                  // done
+}</code></pre>
+  </div>
+
+  <div class="step">
+    <span class="num">Step 3</span><span class="title">Create the listener and start it</span>
+    <p><code>SignalRDeliveryListener</code> connects, signs in with your key, listens on your subscription, and sends ACK or NACK for you based on your handler's answer. Run it in a <code>BackgroundService</code> so it lives as long as your app.</p>
+<pre><code>public sealed class PaymentListener(IConfiguration config) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stop)
+    {
+        var brokerUrl      = new Uri(config["Broker:Url"]!);
+        var subscriptionId = Guid.Parse(config["Broker:SubscriptionId"]!);
+
+        await using var listener =
+            new SignalRDeliveryListener(brokerUrl, config["Broker:ApiKey"]!, HandleAsync);
+
+        await listener.StartAsync([subscriptionId], stop);
+        await Task.Delay(Timeout.Infinite, stop);    // keep listening until the app stops
+    }
+}
+// Program.cs:  builder.Services.AddHostedService&lt;PaymentListener&gt;();</code></pre>
+  </div>
+
+  <div class="step">
+    <span class="num">Step 4</span><span class="title">Nothing else: it reconnects by itself</span>
+    <p>If the network drops or the broker restarts, the listener reconnects on its own. Unanswered deliveries come again after their deadline, which is safe because you skip repeats. For long work, call <code>listener.RenewAsync(delivery)</code> to get more time.</p>
+    <p class="small"><b>Not .NET?</b> Any SignalR client works: connect to <code>https://&lt;broker&gt;/hubs/deliveries</code> with your API key as the access token, call <code>Subscribe(subscriptionId)</code>, handle the <code>Deliver</code> event, then call <code>Ack</code> or <code>Nack</code>.</p>
+  </div>
+</section>
+
+<!-- ============================== 6. WEBHOOK ============================== -->
+<section class="chapter">
+  <h2>6. Consumer with Webhook</h2>
+  <div class="when"><b>Choose Webhook when</b> your app is a web service that already has an HTTPS address. You do not keep any connection open: <b>the broker calls you</b> with an HTTP POST for every message, and your HTTP answer tells it whether it worked.</div>
+
+  <div class="step">
+    <span class="num">Step 1</span><span class="title">Make an HTTPS endpoint and give its address to the admin</span>
+    <p>For example <code>https://billing.internal/webhooks/payments</code>. It must use HTTPS. The admin creates your subscription with this address and gives you your <b>webhook secret</b>.</p>
+  </div>
+
+  <div class="step">
+    <span class="num">Step 2</span><span class="title">Check that the call really comes from the broker</span>
+    <p>Every call is signed with your webhook secret. Read the body as plain text <b>first</b>, then check it with <code>WebhookSignature.Verify</code>. If the check fails, answer <b>401</b> and do nothing.</p>
+  </div>
+
+  <div class="step">
+    <span class="num">Step 3</span><span class="title">Do the work, then answer</span>
+    <table style="margin-bottom:4pt">
+      <tr><th style="width:32%">You answer</th><th>The broker understands</th></tr>
+      <tr><td><b>200</b> (any 2xx except 202)</td><td>Done (ACK).</td></tr>
+      <tr><td><b>4xx</b> or <b>5xx</b></td><td>Failed, try again later (NACK).</td></tr>
+      <tr><td><b>202 Accepted</b></td><td>"I took it and will report back myself." Use it for long work, or to give up on a message: later call <code>POST /api/v1/deliveries/{id}/ack</code>, or <code>/nack</code> with <code>"deadLetter": true</code>. The ID and lock token are in the <code>X-Broker-Delivery-Id</code> and <code>X-Broker-Lock-Token</code> headers.</td></tr>
+      <tr><td>No answer within 30 s</td><td>Failed (timeout), try again later.</td></tr>
+    </table>
+  </div>
+
+  <div class="keep">
+  <p>The whole endpoint:</p>
+<pre><code>string[] secrets = [builder.Configuration["Broker:WebhookSecret"]!];
+
+app.MapPost("/webhooks/payments", async (HttpRequest request, PaymentHandler handler) =&gt;
+{
+    using var reader = new StreamReader(request.Body);
+    var body = await reader.ReadToEndAsync();                 // 1. read the raw text first
+
+    var signature = request.Headers[WebhookHeaders.Signature];
+    var timestamp = request.Headers[WebhookHeaders.Timestamp];
+    if (!WebhookSignature.Verify(signature, timestamp, body, DateTimeOffset.UtcNow, secrets))
+        return Results.Unauthorized();                        // 2. not from the broker
+
+    var delivery = JsonSerializer.Deserialize&lt;Delivery&gt;(body, JsonSerializerOptions.Web)!;
+    try
+    {
+        await handler.ProcessOnceAsync(delivery);             // 3. your work (skips repeats)
+        return Results.Ok();                                  //    → done (ACK)
+    }
+    catch (Exception)
+    {
+        return Results.StatusCode(503);                       //    → try again later
+    }
+});</code></pre>
+  </div>
+
+  <div class="note"><b>Good to know:</b> after 5 failures in a row, the broker stops calling you for 60 seconds; messages wait safely meanwhile. When the admin changes your secret, the old and new ones both work for 24 hours: put both in <code>secrets</code> during that time.</div>
+</section>
+
+<!-- ============================== 7. PULL ============================== -->
+<section class="chapter">
+  <h2>7. Consumer with Long polling (Pull)</h2>
+  <div class="when"><b>Choose Pull when</b> you want to decide yourself <b>when</b> and <b>how fast</b> to take messages: background workers, batch jobs, or work you want to spread over several copies of your app. Your app <b>asks</b> the broker for messages in a loop.</div>
+
+  <p><b>What is long polling?</b> Your app asks "any messages?" and the broker <b>waits</b> (up to 20 seconds here) before answering. As soon as a message arrives, the answer comes back at once. If nothing arrives, you get an empty list and simply ask again. So your app reacts instantly, but does not flood the broker with questions.</p>
+
+  <div class="step">
+    <span class="num">Step 1</span><span class="title">Get your details from the admin</span>
+    <p>You need the broker address, your <b>API key</b> and your <b>subscription ID</b>. Register <code>BrokerClient</code> as in chapter 3, step 1.</p>
+  </div>
+
+  <div class="step">
+    <span class="num">Step 2</span><span class="title">Ask for messages in a loop</span>
+    <p>Call <code>ReceiveAsync</code> with how many messages you want at most (1–32) and how long to wait (0–30 s; use 10–30).</p>
+  </div>
+
+  <div class="step">
+    <span class="num">Step 3</span><span class="title">Handle each message and answer for each one</span>
+    <p>Every message in the batch has its own deadline. Call <code>AckAsync</code> when the work is saved, or <code>NackAsync</code> to try again later (add <code>deadLetter: true</code> to give up). For long work, call <code>RenewAsync</code> to get more time.</p>
+  </div>
+
+  <div class="keep">
+  <p>The whole worker:</p>
+<pre><code>public sealed class PaymentWorker(BrokerClient broker, IConfiguration config) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stop)
+    {
+        var subscriptionId = Guid.Parse(config["Broker:SubscriptionId"]!);
+        while (!stop.IsCancellationRequested)
+        {
+            IReadOnlyList&lt;Delivery&gt; batch;
+            try
+            {
+                // waits up to 20 s, returns at once when a message arrives
+                batch = await broker.ReceiveAsync(subscriptionId,
+                    maxMessages: 16, waitSeconds: 20, ct: stop);
+            }
+            catch (BrokerApiException ex) when (ex.IsTransient)
+            {
+                await Task.Delay(5000, stop);           // broker busy: wait, then ask again
+                continue;
+            }
+
+            foreach (var delivery in batch)
+                await HandleAsync(delivery, stop);
+        }
+    }
+
+    async Task HandleAsync(Delivery delivery, CancellationToken stop)
+    {
+        try
+        {
+            await ProcessOnceAsync(delivery, stop);     // your work (skips repeats)
+            await broker.AckAsync(delivery, stop);      // done
+        }
+        catch (InvalidDataException ex)                 // bad data: give up
+        {
+            await broker.NackAsync(delivery, "Invalid", ex.Message, deadLetter: true, ct: stop);
+        }
+        catch (BrokerApiException ex) when (ex.IsLeaseLost)
+        {
+            // too late: it will come again, and the repeat check handles it
+        }
+        catch (Exception ex)                            // other problem: try again later
+        {
+            await broker.NackAsync(delivery, "Error", ex.Message, ct: stop);
+        }
+    }
+}</code></pre>
+  </div>
+  <div class="tip"><b>Need more speed?</b> Run more copies of the worker. Each message is given to only one of them at a time.</div>
+</section>
+
+<!-- ============================== 8. PICK ============================== -->
+<section class="chapter">
+  <h2>8. Which one should I pick?</h2>
+  <table>
+    <tr><th style="width:22%"></th><th>SignalR</th><th>Webhook</th><th>Long polling (Pull)</th></tr>
+    <tr><td><b>How it works</b></td><td>You keep a connection open; the broker pushes.</td><td>The broker calls your HTTPS address.</td><td>You ask in a loop; the broker waits until there is something.</td></tr>
+    <tr><td><b>Speed</b></td><td>Instant</td><td>Instant</td><td>Instant (while you are asking)</td></tr>
+    <tr><td><b>You need</b></td><td>A long-running app</td><td>An HTTPS endpoint the broker can reach</td><td>A background loop</td></tr>
+    <tr><td><b>Who controls the pace</b></td><td>The broker (up to 8 at once)</td><td>The broker (up to 8 at once)</td><td>You</td></tr>
+    <tr><td><b>Good for</b></td><td>Desktop apps, apps behind a firewall, live screens (Blazor)</td><td>Web services and APIs</td><td>Workers, batch jobs, scaling out</td></tr>
+    <tr><td><b>How you say "done"</b></td><td>Return <code>DeliveryResult.Ack</code></td><td>Answer HTTP 200</td><td>Call <code>AckAsync</code></td></tr>
+    <tr><td><b>How you say "try again"</b></td><td>Return <code>DeliveryResult.Fail(...)</code></td><td>Answer 4xx / 5xx</td><td>Call <code>NackAsync</code></td></tr>
+  </table>
+  <div class="note"><b>Not sure?</b> If you are a web API, pick <b>Webhook</b>. If you cannot be called from outside, pick <b>SignalR</b>. If you want full control over speed, pick <b>Pull</b>.</div>
+
+  <h2 style="margin-top:22pt">9. When something goes wrong</h2>
+  <table>
+    <tr><th style="width:32%">You see</th><th>What to do</th></tr>
+    <tr><td><b>401 Unauthorized</b></td><td>Your API key is missing, wrong or expired. Check your settings; ask the admin for a new key if needed.</td></tr>
+    <tr><td><b>403 Forbidden</b></td><td>Your key is fine, but you are not allowed to use this topic or subscription. Ask the admin.</td></tr>
+    <tr><td><b>404 Not Found</b></td><td>The topic name or subscription ID is wrong. Check the spelling and the ID.</td></tr>
+    <tr><td><b>410 Gone</b> on ACK / NACK</td><td>You answered after the deadline. Do nothing: the message comes again and your repeat check handles it. If it happens often, your work is too slow; renew, or ask the admin for a longer lease.</td></tr>
+    <tr><td><b>503 Service Unavailable</b></td><td>The broker is busy or restarting. Wait a few seconds and try again.</td></tr>
+    <tr><td><b>Webhook: no calls arrive</b></td><td>Is your HTTPS endpoint reachable, and does it answer 2xx? Does the signature check use the right secret? After 5 failures in a row the broker pauses calls for 60 s.</td></tr>
+    <tr><td><b>Messages in the DLQ</b></td><td>Look at the error saved with each message (admin dashboard, or ask the admin). Fix the cause, then ask the admin to send the messages again.</td></tr>
+  </table>
+</section>
+
+</body>
+</html>
