@@ -20,7 +20,11 @@ builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 var app = builder.Build();
 if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
+#if NET10_0_OR_GREATER
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+#else
+app.UseStatusCodePagesWithReExecute("/not-found");
+#endif
 app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();

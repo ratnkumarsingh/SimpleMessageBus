@@ -29,7 +29,7 @@ Phase 1 supports **one broker instance**. The in-memory state above is not share
 
 ### 2.1 Prerequisites
 - SQL Server 2019 or later. The service account needs `db_owner` on the broker database when the broker deploys its own schema. With a DBA-applied script (2.2 B), `db_datareader`, `db_datawriter` and `EXECUTE` on schema `broker` are enough.
-- .NET 10 runtime (ASP.NET Core) on the host.
+- .NET 10 runtime (ASP.NET Core) on the host, or the .NET 9 runtime for a build published with `-p:BrokerTargetFramework=net9.0` (see the README). Microsoft's support for .NET 9 ends on 10 November 2026. On .NET 9, `/openapi/v1.json` is OpenAPI 3.0 rather than 3.1, and the dashboard shows Blazor's built-in reconnect overlay.
 - A TLS certificate for the host (Kestrel or a reverse proxy).
 
 ### 2.2 Database
