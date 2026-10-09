@@ -14,12 +14,17 @@ using Microsoft.AspNetCore.Authorization;
 
 // Operator commands that run instead of the server (docs/runbook.md):
 //   release-script <path>  writes the DBA release script (db/build-release-script.ps1)
+//   full-script <path>     writes the full install script with bootstrap data (db/build-release-script.ps1 -Full)
 //   new-api-key            prints a new key for Broker:Bootstrap:AdminApiKey
 switch (args)
 {
     case ["release-script", var releaseScriptPath]:
         File.WriteAllText(releaseScriptPath, MessageBroker.Infrastructure.Data.ReleaseScript.Build());
         Console.WriteLine($"Release script written to {Path.GetFullPath(releaseScriptPath)}");
+        return;
+    case ["full-script", var fullScriptPath]:
+        File.WriteAllText(fullScriptPath, MessageBroker.Infrastructure.Data.ReleaseScript.BuildFull());
+        Console.WriteLine($"Full install script written to {Path.GetFullPath(fullScriptPath)}");
         return;
     case ["new-api-key"]:
         Console.WriteLine(ApiKeys.Generate().Key);
