@@ -1,11 +1,17 @@
 <Project>
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- .NET 10 by default; build for .NET 9 with -p:BrokerTargetFramework=net9.0 (support for .NET 9 ends 10 Nov 2026). -->
+    <BrokerTargetFramework Condition="'$(BrokerTargetFramework)' == ''">net10.0</BrokerTargetFramework>
+    <TargetFramework>$(BrokerTargetFramework)</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <!-- Once .NET 9 is out of support the SDK warns about the target framework; keep the build green. -->
+    <NoWarn>$(NoWarn);NETSDK1138</NoWarn>
   </PropertyGroup>
 </Project>

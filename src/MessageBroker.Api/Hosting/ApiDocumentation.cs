@@ -1,6 +1,10 @@
 using MessageBroker.Application.Security;
 using Microsoft.AspNetCore.OpenApi;
+#if NET10_0_OR_GREATER
 using Microsoft.OpenApi;
+#else
+using Microsoft.OpenApi.Models;
+#endif
 using Scalar.AspNetCore;
 
 namespace MessageBroker.Api.Hosting;
@@ -52,7 +56,11 @@ public static class ApiDocumentation
                 "Topics, publishing, pull delivery, settlement, dead letters and administration. " +
                 "Authorize with the full header value: ApiKey followed by your key, e.g. ApiKey mbk_….";
             document.Components ??= new OpenApiComponents();
+#if NET10_0_OR_GREATER
             document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
+#else
+            document.Components.SecuritySchemes ??= new Dictionary<string, OpenApiSecurityScheme>();
+#endif
             document.Components.SecuritySchemes[ApiKeys.Scheme] = new OpenApiSecurityScheme
             {
                 Type = SecuritySchemeType.ApiKey,
@@ -60,11 +68,19 @@ public static class ApiDocumentation
                 Name = "Authorization",
                 Description = "The full Authorization header value: ApiKey mbk_…",
             };
+#if NET10_0_OR_GREATER
             document.Security ??= [];
             document.Security.Add(new OpenApiSecurityRequirement
             {
                 [new OpenApiSecuritySchemeReference(ApiKeys.Scheme, document)] = [],
             });
+#else
+            // ASP.NET Core 9 ships Microsoft.OpenApi 1.x (an OpenAPI 3.0 document), where a requirement names its scheme by reference.
+            document.SecurityRequirements.Add(new OpenApiSecurityRequirement
+            {
+                [new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = ApiKeys.Scheme } }] = [],
+            });
+#endif
             return Task.CompletedTask;
         }
     }

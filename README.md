@@ -1,6 +1,6 @@
 # SimpleMessageBus — Internal Message Broker
 
-A topic-based message broker for internal services, built on .NET 10 and SQL Server. Publishers send messages to a topic over HTTP; the broker stores them durably and delivers a copy to every subscription on that topic by **webhook**, **SignalR** or **pull**, with leases, retries, a circuit breaker and a dead-letter queue.
+A topic-based message broker for internal services, built on .NET 10 (it also builds for .NET 9) and SQL Server. Publishers send messages to a topic over HTTP; the broker stores them durably and delivers a copy to every subscription on that topic by **webhook**, **SignalR** or **pull**, with leases, retries, a circuit breaker and a dead-letter queue.
 
 This is the Phase 1 build: a single broker host backed by one SQL Server database.
 
@@ -41,6 +41,19 @@ This is the Phase 1 build: a single broker host backed by one SQL Server databas
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - SQL Server 2019 or later. Development settings use the local default instance with Windows authentication (`Server=localhost`).
+
+### Building for .NET 9
+
+.NET 10 is the default. To build, test, run or publish everything for .NET 9 instead, add `-p:BrokerTargetFramework=net9.0`:
+
+```powershell
+dotnet build -p:BrokerTargetFramework=net9.0
+dotnet test -p:BrokerTargetFramework=net9.0
+dotnet run --project src/MessageBroker.Api -p:BrokerTargetFramework=net9.0
+dotnet publish src/MessageBroker.Api -c Release -p:BrokerTargetFramework=net9.0
+```
+
+Output goes to `bin/<Configuration>/net9.0`, next to the .NET 10 build. The .NET 10 SDK builds both; the .NET 9 SDK builds the .NET 9 target. On .NET 9 the OpenAPI document is version 3.0 (3.1 on .NET 10), and the Blazor apps show Blazor's built-in reconnect overlay instead of the custom one. Microsoft's support for .NET 9 ends on 10 November 2026; prefer .NET 10.
 
 ### Run the broker
 
