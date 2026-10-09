@@ -1,5 +1,10 @@
 -- Schema for the sample applications. A real publisher and subscriber would each own a database;
 -- the samples share one, keyed by subscriber name. Safe to run on every start.
+-- The procedures keep the settings they are created with, and writes to sample.Outbox (filtered index) need
+-- QUOTED_IDENTIFIER ON. sqlcmd defaults to OFF, so set both here for anyone running this script by hand.
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
 IF SCHEMA_ID(N'sample') IS NULL EXEC(N'CREATE SCHEMA sample');
 GO
 
