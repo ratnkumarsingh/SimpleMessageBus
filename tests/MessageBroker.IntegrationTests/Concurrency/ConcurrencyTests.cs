@@ -189,7 +189,7 @@ public sealed class ConcurrencyTests(SqlServerFixture sql, ITestOutputHelper out
         Assert.True(ledger.Abandoned > 0);
         Assert.Equal(ledger.Abandoned + ledger.LostLeases,
             await ScalarAsync<int>("SELECT COUNT(*) FROM broker.DeliveryAttempts WHERE Outcome = 'LeaseExpired'"));
-        Assert.Empty(await QueryAsync<long>("SELECT DeliveryId FROM broker.DeadLetters"));
+        Assert.Empty(await QueryAsync<long>("SELECT DeliveryId FROM broker.DeadLetters", r => Col<long>(r, 0)));
     }
 
     [Fact(DisplayName = "C02 ACK/NACK racing lease expiry: exactly one wins and the delivery's state agrees with the winner")]

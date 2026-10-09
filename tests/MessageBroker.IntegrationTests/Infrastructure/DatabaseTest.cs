@@ -1,4 +1,4 @@
-using Dapper;
+using System.Data;
 using MessageBroker.Application.Persistence;
 using MessageBroker.Domain;
 using MessageBroker.Infrastructure.Data;
@@ -84,36 +84,44 @@ public abstract class DatabaseTest(SqlServerFixture sql) : IAsyncLifetime
 
     // ---- inspection and time travel ----
 
-    protected async Task<T> ScalarAsync<T>(string sql, object? args = null)
+    /// <summary>A parameter for the inline SQL below, e.g. <c>P("id", messageId)</c> for <c>@id</c>.</summary>
+    protected static SqlParameter P(string name, object? value) => SqlHelper.Param(name, value);
+
+    /// <summary>Column <paramref name="ordinal"/> converted like a scalar: numeric widths, UTC DateTimes, NULL as default.</summary>
+    protected static T Col<T>(SqlDataReader reader, int ordinal) => SqlHelper.ConvertScalar<T>(reader.GetValue(ordinal));
+
+    /// <summary>The first column of the first row; a missing or NULL value throws unless <typeparamref name="T"/> is a value type.</summary>
+    protected async Task<T> ScalarAsync<T>(string sql, params SqlParameter[] args) =>
+        SqlHelper.ConvertScalar<T>(await SqlHelper.ExecuteScalarAsync(Sql.ConnectionString, CommandType.Text, sql, CancellationToken.None, args))
+        ?? throw new InvalidOperationException("No value.");
+
+    protected async Task<IReadOnlyList<T>> QueryAsync<T>(string sql, Func<SqlDataReader, T> map, params SqlParameter[] args)
     {
         await using var c = new SqlConnection(Sql.ConnectionString);
-        return await c.ExecuteScalarAsync<T>(sql, args) ?? throw new InvalidOperationException("No value.");
+        await c.OpenAsync();
+        await using var reader = await SqlHelper.ExecuteReaderAsync(c, CommandType.Text, sql, CancellationToken.None, args);
+        return await SqlHelper.ReadAllAsync(reader, map, CancellationToken.None);
     }
 
-    protected async Task<IReadOnlyList<T>> QueryAsync<T>(string sql, object? args = null)
-    {
-        await using var c = new SqlConnection(Sql.ConnectionString);
-        return (await c.QueryAsync<T>(sql, args)).AsList();
-    }
+    /// <summary>The first column of every row.</summary>
+    protected Task<IReadOnlyList<T>> QueryColumnAsync<T>(string sql, params SqlParameter[] args) =>
+        QueryAsync(sql, r => Col<T>(r, 0), args);
 
-    protected async Task ExecAsync(string sql, object? args = null)
-    {
-        await using var c = new SqlConnection(Sql.ConnectionString);
-        await c.ExecuteAsync(sql, args);
-    }
+    protected Task ExecAsync(string sql, params SqlParameter[] args) =>
+        SqlHelper.ExecuteNonQueryAsync(Sql.ConnectionString, CommandType.Text, sql, CancellationToken.None, args);
 
     protected Task<DeliveryRow> GetDeliveryAsync(long deliveryId) =>
-        QueryAsync<DeliveryRow>("SELECT * FROM broker.Deliveries WHERE DeliveryId = @deliveryId", new { deliveryId })
+        QueryAsync("SELECT * FROM broker.Deliveries WHERE DeliveryId = @deliveryId", DeliveryRow.Read, P("deliveryId", deliveryId))
             .ContinueWith(t => t.Result.Single());
 
     protected async Task<IReadOnlyList<DeliveryRow>> GetDeliveriesForMessageAsync(Guid messageId) =>
-        await QueryAsync<DeliveryRow>("SELECT * FROM broker.Deliveries WHERE MessageId = @messageId ORDER BY DeliveryId", new { messageId });
+        await QueryAsync("SELECT * FROM broker.Deliveries WHERE MessageId = @messageId ORDER BY DeliveryId", DeliveryRow.Read, P("messageId", messageId));
 
     protected async Task<IReadOnlyList<AttemptRecord>> GetAttemptsAsync(long deliveryId) =>
-        await QueryAsync<AttemptRecord>("SELECT * FROM broker.DeliveryAttempts WHERE DeliveryId = @deliveryId ORDER BY AttemptNumber", new { deliveryId });
+        await QueryAsync("SELECT * FROM broker.DeliveryAttempts WHERE DeliveryId = @deliveryId ORDER BY AttemptNumber", RecordMap.Attempt, P("deliveryId", deliveryId));
 
     protected async Task<IReadOnlyList<DeadLetterRow>> GetDeadLettersAsync(long deliveryId) =>
-        await QueryAsync<DeadLetterRow>("SELECT * FROM broker.DeadLetters WHERE DeliveryId = @deliveryId ORDER BY DeadLetterId", new { deliveryId });
+        await QueryAsync("SELECT * FROM broker.DeadLetters WHERE DeliveryId = @deliveryId ORDER BY DeadLetterId", DeadLetterRow.Read, P("deliveryId", deliveryId));
 
     protected Task<DateTime> DbNowAsync() => ScalarAsync<DateTime>("SELECT SYSUTCDATETIME()");
 
@@ -123,15 +131,15 @@ public abstract class DatabaseTest(SqlServerFixture sql) : IAsyncLifetime
     /// </summary>
     protected Task BackdateAsync(string table, string keyColumn, object key, string column, int seconds) =>
         ExecAsync($"UPDATE broker.{table} SET {column} = DATEADD(second, -@seconds, {column}) WHERE {keyColumn} = @key",
-            new { seconds, key });
+            P("seconds", seconds), P("key", key));
 
     /// <summary>Makes a Pending delivery due now (skips its backoff).</summary>
     protected Task MakeDueAsync(long deliveryId) =>
-        ExecAsync("UPDATE broker.Deliveries SET AvailableAt = DATEADD(second, -1, SYSUTCDATETIME()) WHERE DeliveryId = @deliveryId", new { deliveryId });
+        ExecAsync("UPDATE broker.Deliveries SET AvailableAt = DATEADD(second, -1, SYSUTCDATETIME()) WHERE DeliveryId = @deliveryId", P("deliveryId", deliveryId));
 
     /// <summary>Makes a Leased delivery's lease lapse.</summary>
     protected Task LapseLeaseAsync(long deliveryId) =>
-        ExecAsync("UPDATE broker.Deliveries SET LockedUntil = DATEADD(second, -1, SYSUTCDATETIME()) WHERE DeliveryId = @deliveryId", new { deliveryId });
+        ExecAsync("UPDATE broker.Deliveries SET LockedUntil = DATEADD(second, -1, SYSUTCDATETIME()) WHERE DeliveryId = @deliveryId", P("deliveryId", deliveryId));
 
     protected static Task<BrokerException> ThrowsBrokerAsync(BrokerErrorKind kind, Func<Task> action) =>
         Assert.ThrowsAsync<BrokerException>(action).ContinueWith(t =>
@@ -157,6 +165,22 @@ public sealed record DeliveryRow
     public DateTime? CompletedAt { get; init; }
 
     public DeliveryStatus State => (DeliveryStatus)Status;
+
+    public static DeliveryRow Read(SqlDataReader r) => new()
+    {
+        DeliveryId = r.GetInt64("DeliveryId"),
+        MessageId = r.GetGuid("MessageId"),
+        SubscriptionId = r.GetGuid("SubscriptionId"),
+        Status = r.GetByte("Status"),
+        AttemptCount = r.GetInt32("AttemptCount"),
+        TotalAttemptCount = r.GetInt32("TotalAttemptCount"),
+        AvailableAt = r.GetUtcDateTime("AvailableAt"),
+        LockedUntil = r.GetNullableUtcDateTime("LockedUntil"),
+        LockToken = r.GetNullableGuid("LockToken"),
+        ExpiresAt = r.GetNullableUtcDateTime("ExpiresAt"),
+        CreatedAt = r.GetUtcDateTime("CreatedAt"),
+        CompletedAt = r.GetNullableUtcDateTime("CompletedAt"),
+    };
 }
 
 public sealed record DeadLetterRow
@@ -171,4 +195,18 @@ public sealed record DeadLetterRow
     public DateTime DeadLetteredAt { get; init; }
     public DateTime? RequeuedAt { get; init; }
     public Guid? RequeuedBy { get; init; }
+
+    public static DeadLetterRow Read(SqlDataReader r) => new()
+    {
+        DeadLetterId = r.GetInt64("DeadLetterId"),
+        DeliveryId = r.GetInt64("DeliveryId"),
+        Reason = r.GetString("Reason"),
+        AttemptCount = r.GetInt32("AttemptCount"),
+        LastError = r.GetNullableString("LastError"),
+        FirstFailureAt = r.GetNullableUtcDateTime("FirstFailureAt"),
+        LastFailureAt = r.GetNullableUtcDateTime("LastFailureAt"),
+        DeadLetteredAt = r.GetUtcDateTime("DeadLetteredAt"),
+        RequeuedAt = r.GetNullableUtcDateTime("RequeuedAt"),
+        RequeuedBy = r.GetNullableGuid("RequeuedBy"),
+    };
 }

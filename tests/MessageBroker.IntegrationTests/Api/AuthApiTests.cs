@@ -44,7 +44,7 @@ public sealed class AuthApiTests(SqlServerFixture sql) : ApiTest(sql)
 
         // Expired key (expiry moved into the past).
         var (expiringId, _, expiring) = await CreateAppClientAsync();
-        await ExecAsync("UPDATE broker.ApiKeys SET ExpiresAt = DATEADD(second, -1, SYSUTCDATETIME()) WHERE AppId = @expiringId", new { expiringId });
+        await ExecAsync("UPDATE broker.ApiKeys SET ExpiresAt = DATEADD(second, -1, SYSUTCDATETIME()) WHERE AppId = @expiringId", P("expiringId", expiringId));
         await ProblemAsync(await expiring.GetAsync("/api/v1/topics"), HttpStatusCode.Unauthorized, ProblemTypes.Unauthorized);
     }
 
@@ -109,7 +109,7 @@ public sealed class AuthApiTests(SqlServerFixture sql) : ApiTest(sql)
         var listed = await ReadAsync<List<ApiKeyResponse>>(await Admin.GetAsync($"/api/v1/admin/applications/{appId}/keys"));
         Assert.Equal(2, listed.Count);
         Assert.All(listed, k => Assert.Null(k.ApiKey));
-        Assert.Equal(32, await ScalarAsync<int>("SELECT MAX(DATALENGTH(Hash)) FROM broker.ApiKeys WHERE AppId = @appId", new { appId }));
+        Assert.Equal(32, await ScalarAsync<int>("SELECT MAX(DATALENGTH(Hash)) FROM broker.ApiKeys WHERE AppId = @appId", P("appId", appId)));
 
         // An admin cannot lock itself out.
         var self = await ReadAsync<List<ApplicationResponse>>(await Admin.GetAsync("/api/v1/admin/applications"));

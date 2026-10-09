@@ -1,65 +1,66 @@
 using System.Data;
-using Dapper;
 using MessageBroker.Application.Persistence;
 using MessageBroker.Domain;
+using static MessageBroker.Infrastructure.Data.SqlHelper;
 
 namespace MessageBroker.Infrastructure.Data;
 
 public sealed class ApplicationRepository(Db db) : IApplicationRepository
 {
     public Task<ApplicationRecord> CreateAsync(Guid appId, string name, bool isAdmin, CancellationToken ct = default) =>
-        db.QuerySingleAsync<ApplicationRecord>("usp_Application_Create", new { AppId = appId, Name = name, IsAdmin = isAdmin }, ct);
+        db.QuerySingleAsync("usp_Application_Create", RecordMap.Application, ct,
+            Param("AppId", appId), Param("Name", name), Param("IsAdmin", isAdmin));
 
     public Task<ApplicationRecord?> GetAsync(Guid appId, CancellationToken ct = default) =>
-        db.QuerySingleOrDefaultAsync<ApplicationRecord>("usp_Application_Get", new { AppId = appId }, ct);
+        db.QuerySingleOrDefaultAsync("usp_Application_Get", RecordMap.Application, ct, Param("AppId", appId));
 
     public Task<IReadOnlyList<ApplicationRecord>> ListAsync(CancellationToken ct = default) =>
-        db.QueryAsync<ApplicationRecord>("usp_Application_List", null, ct);
+        db.QueryAsync("usp_Application_List", RecordMap.Application, ct);
 
     public Task SetActiveAsync(Guid appId, bool isActive, CancellationToken ct = default) =>
-        db.ExecuteAsync("usp_Application_SetActive", new { AppId = appId, IsActive = isActive }, ct);
+        db.ExecuteAsync("usp_Application_SetActive", ct, Param("AppId", appId), Param("IsActive", isActive));
 
     public Task EnsureBootstrapAdminAsync(Guid appId, string name, Guid keyId, string prefix, byte[] hash, CancellationToken ct = default) =>
-        db.ExecuteAsync("usp_Application_EnsureBootstrapAdmin",
-            new { AppId = appId, Name = name, KeyId = keyId, Prefix = prefix, Hash = hash }, ct);
+        db.ExecuteAsync("usp_Application_EnsureBootstrapAdmin", ct,
+            Param("AppId", appId), Param("Name", name), Param("KeyId", keyId), Param("Prefix", prefix), Param("Hash", hash));
 
     public Task<ApiKeyRecord> CreateKeyAsync(Guid keyId, Guid appId, string prefix, byte[] hash, DateTime? expiresAt, CancellationToken ct = default) =>
-        db.QuerySingleAsync<ApiKeyRecord>("usp_ApiKey_Create",
-            new { KeyId = keyId, AppId = appId, Prefix = prefix, Hash = hash, ExpiresAt = expiresAt }, ct);
+        db.QuerySingleAsync("usp_ApiKey_Create", RecordMap.ApiKey, ct,
+            Param("KeyId", keyId), Param("AppId", appId), Param("Prefix", prefix), Param("Hash", hash), Param("ExpiresAt", expiresAt));
 
     public Task DeactivateKeyAsync(Guid appId, Guid keyId, CancellationToken ct = default) =>
-        db.ExecuteAsync("usp_ApiKey_Deactivate", new { AppId = appId, KeyId = keyId }, ct);
+        db.ExecuteAsync("usp_ApiKey_Deactivate", ct, Param("AppId", appId), Param("KeyId", keyId));
 
     public Task<IReadOnlyList<ApiKeyRecord>> ListKeysAsync(Guid appId, CancellationToken ct = default) =>
-        db.QueryAsync<ApiKeyRecord>("usp_ApiKey_List", new { AppId = appId }, ct);
+        db.QueryAsync("usp_ApiKey_List", RecordMap.ApiKey, ct, Param("AppId", appId));
 
     public Task<ApiKeyLookup?> GetKeyByPrefixAsync(string prefix, CancellationToken ct = default) =>
-        db.QuerySingleOrDefaultAsync<ApiKeyLookup>("usp_ApiKey_GetByPrefix", new { Prefix = prefix }, ct);
+        db.QuerySingleOrDefaultAsync("usp_ApiKey_GetByPrefix", RecordMap.ApiKeyLookup, ct, Param("Prefix", prefix));
 
     public Task GrantAsync(PermissionRecord p, CancellationToken ct = default) =>
-        db.ExecuteAsync("usp_Permission_Grant", p, ct);
+        db.ExecuteAsync("usp_Permission_Grant", ct, RecordMap.Parameters(p));
 
     public Task RevokeAsync(PermissionRecord p, CancellationToken ct = default) =>
-        db.ExecuteAsync("usp_Permission_Revoke", p, ct);
+        db.ExecuteAsync("usp_Permission_Revoke", ct, RecordMap.Parameters(p));
 
     public Task<IReadOnlyList<PermissionRecord>> ListPermissionsAsync(Guid appId, CancellationToken ct = default) =>
-        db.QueryAsync<PermissionRecord>("usp_Permission_List", new { AppId = appId }, ct);
+        db.QueryAsync("usp_Permission_List", RecordMap.Permission, ct, Param("AppId", appId));
 
     public Task<bool> HasPermissionAsync(Guid appId, string resourceType, Guid resourceId, string permission, CancellationToken ct = default) =>
-        db.QuerySingleAsync<bool>("usp_Permission_Check",
-            new { AppId = appId, ResourceType = resourceType, ResourceId = resourceId, Permission = permission }, ct);
+        db.ScalarAsync<bool>("usp_Permission_Check", ct,
+            Param("AppId", appId), Param("ResourceType", resourceType), Param("ResourceId", resourceId), Param("Permission", permission));
 }
 
 public sealed class AllowedHostRepository(Db db) : IAllowedHostRepository
 {
     public Task AddAsync(string host, Guid? addedBy, CancellationToken ct = default) =>
-        db.ExecuteAsync("usp_AllowedHost_Add", new { Host = host, AddedBy = addedBy }, ct);
+        db.ExecuteAsync("usp_AllowedHost_Add", ct, Param("Host", host), Param("AddedBy", addedBy));
 
     public Task RemoveAsync(string host, CancellationToken ct = default) =>
-        db.ExecuteAsync("usp_AllowedHost_Remove", new { Host = host }, ct);
+        db.ExecuteAsync("usp_AllowedHost_Remove", ct, Param("Host", host));
 
     public Task<IReadOnlyList<AllowedHostRecord>> ListAsync(CancellationToken ct = default) =>
-        db.QueryAsync<AllowedHostRecord>("usp_AllowedHost_List", null, ct);
+        db.QueryAsync("usp_AllowedHost_List", RecordMap.AllowedHost, ct);
 
     public Task SeedAsync(IEnumerable<string> hosts, CancellationToken ct = default)
     {
@@ -67,71 +68,76 @@ public sealed class AllowedHostRepository(Db db) : IAllowedHostRepository
         table.Columns.Add("Host", typeof(string));
         foreach (var host in hosts.Select(h => h.Trim()).Where(h => h.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase))
             table.Rows.Add(host);
-        return db.ExecuteAsync("usp_AllowedHost_Seed", new { Hosts = table.AsTableValuedParameter("broker.HostList") }, ct);
+        return db.ExecuteAsync("usp_AllowedHost_Seed", ct, Table("Hosts", "broker.HostList", table));
     }
 }
 
 public sealed class TopicRepository(Db db) : ITopicRepository
 {
     public Task<TopicRecord> CreateAsync(Guid topicId, string name, int? defaultTtlSeconds, CancellationToken ct = default) =>
-        db.QuerySingleAsync<TopicRecord>("usp_Topic_Create", new { TopicId = topicId, Name = name, DefaultTtlSeconds = defaultTtlSeconds }, ct);
+        db.QuerySingleAsync("usp_Topic_Create", RecordMap.Topic, ct,
+            Param("TopicId", topicId), Param("Name", name), Param("DefaultTtlSeconds", defaultTtlSeconds));
 
     public Task<TopicRecord?> GetAsync(Guid topicId, CancellationToken ct = default) =>
-        db.QuerySingleOrDefaultAsync<TopicRecord>("usp_Topic_Get", new { TopicId = topicId }, ct);
+        db.QuerySingleOrDefaultAsync("usp_Topic_Get", RecordMap.Topic, ct, Param("TopicId", topicId));
 
     public Task<TopicRecord?> GetByNameAsync(string name, CancellationToken ct = default) =>
-        db.QuerySingleOrDefaultAsync<TopicRecord>("usp_Topic_Get", new { Name = name }, ct);
+        db.QuerySingleOrDefaultAsync("usp_Topic_Get", RecordMap.Topic, ct, Param("Name", name));
 
     public Task<IReadOnlyList<TopicRecord>> ListAsync(CancellationToken ct = default) =>
-        db.QueryAsync<TopicRecord>("usp_Topic_List", null, ct);
+        db.QueryAsync("usp_Topic_List", RecordMap.Topic, ct);
 
     public Task<TopicRecord> UpdateAsync(Guid topicId, int? defaultTtlSeconds, CancellationToken ct = default) =>
-        db.QuerySingleAsync<TopicRecord>("usp_Topic_Update", new { TopicId = topicId, DefaultTtlSeconds = defaultTtlSeconds }, ct);
+        db.QuerySingleAsync("usp_Topic_Update", RecordMap.Topic, ct,
+            Param("TopicId", topicId), Param("DefaultTtlSeconds", defaultTtlSeconds));
 
     public Task DeleteAsync(Guid topicId, CancellationToken ct = default) =>
-        db.ExecuteAsync("usp_Topic_Delete", new { TopicId = topicId }, ct);
+        db.ExecuteAsync("usp_Topic_Delete", ct, Param("TopicId", topicId));
 }
 
 public sealed class SubscriptionRepository(Db db) : ISubscriptionRepository
 {
     public Task<SubscriptionRecord> CreateAsync(SubscriptionCreate create, CancellationToken ct = default) =>
-        db.QuerySingleAsync<SubscriptionRecord>("usp_Subscription_Create", create, ct);
+        db.QuerySingleAsync("usp_Subscription_Create", RecordMap.Subscription, ct, RecordMap.Parameters(create));
 
     public Task<SubscriptionRecord?> GetAsync(Guid subscriptionId, CancellationToken ct = default) =>
-        db.QuerySingleOrDefaultAsync<SubscriptionRecord>("usp_Subscription_Get", new { SubscriptionId = subscriptionId }, ct);
+        db.QuerySingleOrDefaultAsync("usp_Subscription_Get", RecordMap.Subscription, ct, Param("SubscriptionId", subscriptionId));
 
     public Task<IReadOnlyList<SubscriptionRecord>> ListAsync(Guid topicId, CancellationToken ct = default) =>
-        db.QueryAsync<SubscriptionRecord>("usp_Subscription_List", new { TopicId = topicId }, ct);
+        db.QueryAsync("usp_Subscription_List", RecordMap.Subscription, ct, Param("TopicId", topicId));
 
     public Task<SubscriptionRecord> UpdateAsync(SubscriptionUpdate update, CancellationToken ct = default) =>
-        db.QuerySingleAsync<SubscriptionRecord>("usp_Subscription_Update", update, ct);
+        db.QuerySingleAsync("usp_Subscription_Update", RecordMap.Subscription, ct, RecordMap.Parameters(update));
 
     public Task DeleteAsync(Guid subscriptionId, CancellationToken ct = default) =>
-        db.ExecuteAsync("usp_Subscription_Delete", new { SubscriptionId = subscriptionId }, ct);
+        db.ExecuteAsync("usp_Subscription_Delete", ct, Param("SubscriptionId", subscriptionId));
 
     public Task<SubscriptionRecord> RotateSecretAsync(Guid subscriptionId, string newSecret, CancellationToken ct = default) =>
-        db.QuerySingleAsync<SubscriptionRecord>("usp_Subscription_RotateSecret", new { SubscriptionId = subscriptionId, NewSecret = newSecret }, ct);
+        db.QuerySingleAsync("usp_Subscription_RotateSecret", RecordMap.Subscription, ct,
+            Param("SubscriptionId", subscriptionId), Param("NewSecret", newSecret));
 
     public Task<IReadOnlyList<PushSubscriptionRecord>> ListActivePushAsync(CancellationToken ct = default) =>
-        db.QueryAsync<PushSubscriptionRecord>("usp_Subscription_ListActivePush", null, ct);
+        db.QueryAsync("usp_Subscription_ListActivePush", RecordMap.PushSubscription, ct);
 }
 
 public sealed class MessageRepository(Db db) : IMessageRepository
 {
     public Task<PublishRecord> PublishAsync(PublishCommand c, CancellationToken ct = default) =>
-        db.QuerySingleAsync<PublishRecord>("usp_Message_Publish", c, ct);
+        db.QuerySingleAsync("usp_Message_Publish", RecordMap.Publish, ct, RecordMap.Parameters(c));
 
     public Task<MessageDetailsRecord> GetByIdAsync(Guid messageId, Guid? appId, CancellationToken ct = default) =>
-        db.QueryMultipleAsync("usp_Message_GetById", new { MessageId = messageId, AppId = appId }, async grid =>
+        db.ReadMultipleAsync("usp_Message_GetById", async reader =>
         {
-            var message = await grid.ReadSingleAsync<MessageRecord>();
-            var deliveries = (await grid.ReadAsync<MessageDeliveryRecord>()).AsList();
-            var attempts = (await grid.ReadAsync<AttemptRecord>()).AsList();
+            var message = await ReadSingleAsync(reader, RecordMap.Message, ct);
+            await reader.NextResultAsync(ct);
+            var deliveries = await ReadAllAsync(reader, RecordMap.MessageDelivery, ct);
+            await reader.NextResultAsync(ct);
+            var attempts = await ReadAllAsync(reader, RecordMap.Attempt, ct);
             return new MessageDetailsRecord(message, deliveries, attempts);
-        }, ct);
+        }, ct, Param("MessageId", messageId), Param("AppId", appId));
 
     public Task<IReadOnlyList<MessageSummaryRecord>> ListByCorrelationAsync(string correlationId, CancellationToken ct = default) =>
-        db.QueryAsync<MessageSummaryRecord>("usp_Message_ListByCorrelation", new { CorrelationId = correlationId }, ct);
+        db.QueryAsync("usp_Message_ListByCorrelation", RecordMap.MessageSummary, ct, Param("CorrelationId", correlationId));
 }
 
 public sealed class DeliveryRepository(Db db) : IDeliveryRepository
@@ -140,47 +146,43 @@ public sealed class DeliveryRepository(Db db) : IDeliveryRepository
     private const int MaxErrorCodeLength = 100;
 
     public Task<IReadOnlyList<LeasedDeliveryRecord>> LeaseAsync(Guid subscriptionId, int maxMessages, string channel, Guid? appId, CancellationToken ct = default) =>
-        db.QueryAsync<LeasedDeliveryRecord>("usp_Delivery_Lease",
-            new { SubscriptionId = subscriptionId, MaxMessages = maxMessages, Channel = channel, AppId = appId }, ct);
+        db.QueryAsync("usp_Delivery_Lease", RecordMap.LeasedDelivery, ct,
+            Param("SubscriptionId", subscriptionId), Param("MaxMessages", maxMessages), Param("Channel", channel), Param("AppId", appId));
 
     public Task<Guid> AckAsync(long deliveryId, Guid lockToken, Guid? appId, int? httpStatusCode = null, CancellationToken ct = default) =>
-        db.QuerySingleAsync<Guid>("usp_Delivery_Ack",
-            new { DeliveryId = deliveryId, LockToken = lockToken, AppId = appId, HttpStatusCode = httpStatusCode }, ct);
+        db.ScalarAsync<Guid>("usp_Delivery_Ack", ct,
+            Param("DeliveryId", deliveryId), Param("LockToken", lockToken), Param("AppId", appId), Param("HttpStatusCode", httpStatusCode));
 
     public Task<NackRecord> NackAsync(long deliveryId, Guid lockToken, Guid? appId, FailureDetails f, CancellationToken ct = default) =>
-        db.QuerySingleAsync<NackRecord>("usp_Delivery_Nack", new
-        {
-            DeliveryId = deliveryId,
-            LockToken = lockToken,
-            AppId = appId,
-            ErrorCode = Truncate(f.ErrorCode, MaxErrorCodeLength),
-            ErrorMessage = Truncate(f.ErrorMessage, MaxErrorMessageLength),
-            f.ErrorDetail,
-            f.HttpStatusCode,
-            f.DeadLetter,
-        }, ct);
+        db.QuerySingleAsync("usp_Delivery_Nack", RecordMap.Nack, ct,
+            Param("DeliveryId", deliveryId),
+            Param("LockToken", lockToken),
+            Param("AppId", appId),
+            Param("ErrorCode", Truncate(f.ErrorCode, MaxErrorCodeLength)),
+            Param("ErrorMessage", Truncate(f.ErrorMessage, MaxErrorMessageLength)),
+            Param("ErrorDetail", f.ErrorDetail),
+            Param("HttpStatusCode", f.HttpStatusCode),
+            Param("DeadLetter", f.DeadLetter));
 
     public Task<DateTime> RenewAsync(long deliveryId, Guid lockToken, Guid? appId, CancellationToken ct = default) =>
-        db.QuerySingleAsync<DateTime>("usp_Delivery_Renew", new { DeliveryId = deliveryId, LockToken = lockToken, AppId = appId }, ct);
+        db.ScalarAsync<DateTime>("usp_Delivery_Renew", ct, Param("DeliveryId", deliveryId), Param("LockToken", lockToken), Param("AppId", appId));
 
     public Task<int> ExpireLeasesAsync(int maxRows = 500, CancellationToken ct = default) =>
-        db.QuerySingleAsync<int>("usp_Delivery_ExpireLeases", new { MaxRows = maxRows }, ct);
+        db.ScalarAsync<int>("usp_Delivery_ExpireLeases", ct, Param("MaxRows", maxRows));
 
     public Task<int> ExpirePendingAsync(int maxRows = 1000, CancellationToken ct = default) =>
-        db.QuerySingleAsync<int>("usp_Delivery_ExpirePending", new { MaxRows = maxRows }, ct);
+        db.ScalarAsync<int>("usp_Delivery_ExpirePending", ct, Param("MaxRows", maxRows));
 
     public Task<Guid> RequeueAsync(long deliveryId, Guid requeuedBy, CancellationToken ct = default) =>
-        db.QuerySingleAsync<Guid>("usp_DeadLetter_Requeue", new { DeliveryId = deliveryId, RequeuedBy = requeuedBy }, ct);
+        db.ScalarAsync<Guid>("usp_DeadLetter_Requeue", ct, Param("DeliveryId", deliveryId), Param("RequeuedBy", requeuedBy));
 
     public Task<IReadOnlyList<DeadLetterRecord>> ListDeadLettersAsync(Guid subscriptionId, Guid? appId, int pageSize, long? beforeId, bool includeRequeued, CancellationToken ct = default) =>
-        db.QueryAsync<DeadLetterRecord>("usp_DeadLetter_List", new
-        {
-            SubscriptionId = subscriptionId,
-            AppId = appId,
-            PageSize = pageSize,
-            BeforeId = beforeId,
-            IncludeRequeued = includeRequeued,
-        }, ct);
+        db.QueryAsync("usp_DeadLetter_List", RecordMap.DeadLetter, ct,
+            Param("SubscriptionId", subscriptionId),
+            Param("AppId", appId),
+            Param("PageSize", pageSize),
+            Param("BeforeId", beforeId),
+            Param("IncludeRequeued", includeRequeued));
 
     private static string? Truncate(string? value, int max) => value is { Length: > 0 } && value.Length > max ? value[..max] : value;
 }
@@ -188,34 +190,37 @@ public sealed class DeliveryRepository(Db db) : IDeliveryRepository
 public sealed class DashboardRepository(Db db) : IDashboardRepository
 {
     public Task<OverviewRecord> GetOverviewAsync(int windowMinutes, CancellationToken ct = default) =>
-        db.QueryMultipleAsync("usp_Admin_GetOverview", new { WindowMinutes = windowMinutes }, async grid =>
+        db.ReadMultipleAsync("usp_Admin_GetOverview", async reader =>
         {
-            var totals = await grid.ReadSingleAsync<OverviewTotalsRecord>();
-            var series = (await grid.ReadAsync<ThroughputRecord>()).AsList();
-            var subscriptions = (await grid.ReadAsync<SubscriptionHealthRecord>()).AsList();
-            var heartbeat = await grid.ReadSingleAsync<HeartbeatRecord>();
+            var totals = await ReadSingleAsync(reader, RecordMap.OverviewTotals, ct);
+            await reader.NextResultAsync(ct);
+            var series = await ReadAllAsync(reader, RecordMap.Throughput, ct);
+            await reader.NextResultAsync(ct);
+            var subscriptions = await ReadAllAsync(reader, RecordMap.SubscriptionHealth, ct);
+            await reader.NextResultAsync(ct);
+            var heartbeat = await ReadSingleAsync(reader, RecordMap.Heartbeat, ct);
             return new OverviewRecord(totals, series, subscriptions, heartbeat);
-        }, ct);
+        }, ct, Param("WindowMinutes", windowMinutes));
 
     public Task<IReadOnlyList<MessageSearchRecord>> SearchMessagesAsync(MessageSearchQuery query, CancellationToken ct = default) =>
-        db.QueryAsync<MessageSearchRecord>("usp_Admin_Message_Search", query, ct);
+        db.QueryAsync("usp_Admin_Message_Search", RecordMap.MessageSearch, ct, RecordMap.Parameters(query));
 
     public Task<IReadOnlyList<DeadLetterRecord>> SearchDeadLettersAsync(DeadLetterSearchQuery query, CancellationToken ct = default) =>
-        db.QueryAsync<DeadLetterRecord>("usp_Admin_DeadLetter_Search", query, ct);
+        db.QueryAsync("usp_Admin_DeadLetter_Search", RecordMap.DeadLetterSummary, ct, RecordMap.Parameters(query));
 }
 
 public sealed class OperationsRepository(Db db) : IOperationsRepository
 {
     public Task WriteHeartbeatAsync(string instanceId, CancellationToken ct = default) =>
-        db.ExecuteAsync("usp_Heartbeat_Write", new { InstanceId = instanceId }, ct);
+        db.ExecuteAsync("usp_Heartbeat_Write", ct, Param("InstanceId", instanceId));
 
     public Task<HeartbeatRecord> GetLatestHeartbeatAsync(CancellationToken ct = default) =>
-        db.QuerySingleAsync<HeartbeatRecord>("usp_Heartbeat_GetLatest", null, ct);
+        db.QuerySingleAsync("usp_Heartbeat_GetLatest", RecordMap.Heartbeat, ct);
 
     public Task<PurgeRecord> PurgeAsync(int completedDays, int deadLetterDays, int batchSize, CancellationToken ct = default) =>
-        db.QuerySingleAsync<PurgeRecord>("usp_Retention_Purge",
-            new { CompletedDays = completedDays, DeadLetterDays = deadLetterDays, BatchSize = batchSize }, ct);
+        db.QuerySingleAsync("usp_Retention_Purge", RecordMap.Purge, ct,
+            Param("CompletedDays", completedDays), Param("DeadLetterDays", deadLetterDays), Param("BatchSize", batchSize));
 
     public Task PingAsync(CancellationToken ct = default) =>
-        db.QuerySingleAsync<int>("usp_Health_Ping", null, ct);
+        db.ScalarAsync<int>("usp_Health_Ping", ct);
 }

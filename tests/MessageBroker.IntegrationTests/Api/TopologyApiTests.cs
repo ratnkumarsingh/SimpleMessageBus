@@ -165,7 +165,7 @@ public sealed class TopologyApiTests(SqlServerFixture sql) : ApiTest(sql)
         Assert.False(string.IsNullOrEmpty(subscription.WebhookSecret));
 
         // Stored encrypted; reads never return it.
-        var stored = await ScalarAsync<string>("SELECT WebhookSecret FROM broker.Subscriptions WHERE SubscriptionId = @id", new { id = subscription.SubscriptionId });
+        var stored = await ScalarAsync<string>("SELECT WebhookSecret FROM broker.Subscriptions WHERE SubscriptionId = @id", P("id", subscription.SubscriptionId));
         Assert.NotEqual(subscription.WebhookSecret, stored);
         var protector = Api.Services.GetRequiredService<ISecretProtector>();
         Assert.Equal(subscription.WebhookSecret, protector.Unprotect(stored));
@@ -198,7 +198,7 @@ public sealed class TopologyApiTests(SqlServerFixture sql) : ApiTest(sql)
         Assert.InRange((rotated.PreviousSecretExpiresAt!.Value - await DbNowAsync()).TotalHours, 23.9, 24.1);
 
         var protector = Api.Services.GetRequiredService<ISecretProtector>();
-        var previous = await ScalarAsync<string>("SELECT PreviousWebhookSecret FROM broker.Subscriptions WHERE SubscriptionId = @id", new { id = subscription.SubscriptionId });
+        var previous = await ScalarAsync<string>("SELECT PreviousWebhookSecret FROM broker.Subscriptions WHERE SubscriptionId = @id", P("id", subscription.SubscriptionId));
         Assert.Equal(subscription.WebhookSecret, protector.Unprotect(previous));
 
         // Pull subscriptions have no secret.
