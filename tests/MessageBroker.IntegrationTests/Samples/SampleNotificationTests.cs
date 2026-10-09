@@ -21,7 +21,11 @@ public sealed class SampleNotificationTests(SqlServerFixture sql) : ApiTest(sql)
     public async Task S04_NotificationReachesFeed()
     {
         var settings = await SampleSetup.RunAsync(Admin,
-            new SampleSettings { BrokerUrl = Api.Server.BaseAddress, Webhook = { Url = $"https://{ApiFactory.SeededHost}" } });
+            new SampleSettings { BrokerUrl = Api.Server.BaseAddress, Webhook = { Url = $"https://{ApiFactory.SeededHost}" }, ConsoleWebhook = { Url = $"https://{ApiFactory.SeededHost}" } });
+        // Setup also onboards the console samples on this topic (S10 covers them); without their listeners
+        // they would only add deliveries that never settle.
+        foreach (var console in new[] { settings.ConsoleSignalR, settings.ConsolePull, settings.ConsoleWebhook })
+            (await Admin.DeleteAsync($"api/v1/subscriptions/{console.SubscriptionId}")).EnsureSuccessStatusCode();
 
         var feed = new NotificationFeed();
         var toasts = new ConcurrentQueue<ReceivedNotification>();

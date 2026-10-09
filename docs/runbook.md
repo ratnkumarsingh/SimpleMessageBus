@@ -305,6 +305,21 @@ dotnet run --project samples/BlazorPublisher          # http://localhost:5082 â€
 ```
 Send publishes a `UserNotification` with a fresh `Idempotency-Key`. BlazorSubscriber receives it over its SignalR subscription and shows a toast in every open tab, coloured by level. A redelivered message is ACKed without a second toast, and a notification with no title is dead-lettered (`RejectedBySubscriber`). The subscriber keeps the last 50 notifications in memory only.
 
+**Console samples.** `setup` also onboards them on the same `notifications` topic. To add them to an existing `samples.local.json` without replacing the other samples' keys, run `setup-console` instead:
+```powershell
+dotnet run --project samples/SamplePublisher -- setup-console --AdminKey <admin key>
+dotnet run --project samples/ConsoleSubscriber        # webhook endpoint on http://localhost:5084
+dotnet run --project samples/ConsolePublisher         # type: Deploy done | v1.2 is live | Success
+dotnet run --project samples/ConsolePublisher -- --Count 5 --IntervalSeconds 1 --Level Warning
+```
+ConsoleSubscriber has three subscriptions, one per delivery mode, so each notification prints three times, once per channel, with the latency since publish:
+```
+12:03:04 [SignalR] SUCCESS Deploy done: v1.2 is live (from ConsolePublisher, 18 ms after publish)
+12:03:04 [Webhook] SUCCESS Deploy done: v1.2 is live (from ConsolePublisher, 41 ms after publish)
+12:03:04 [Pull] SUCCESS Deploy done: v1.2 is live (from ConsolePublisher, 63 ms after publish)
+```
+BlazorPublisher's notifications show up here too, and ConsolePublisher's appear as toasts in BlazorSubscriber. Each channel deduplicates and dead-letters on its own, like BlazorSubscriber. While ConsoleSubscriber is stopped, its webhook deliveries fail three attempts and are dead-lettered (`MaxAttemptsExceeded`); its Pull and SignalR deliveries wait until it starts again or their TTL runs out.
+
 Tests: `dotnet test InternalMessageBroker.sln` (local SQL Server; `BROKER_TEST_SQL` overrides the server). It includes the concurrency (C01, C02) and restart (R01, R02) tests, which take about 25 s together.
 
 The load test (L01) runs separately and should be built in Release:

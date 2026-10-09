@@ -11,8 +11,9 @@ namespace SamplePublisher;
 /// "SamplePublisher setup": onboards the samples through the admin API, the same steps the runbook
 /// describes for a real application. It creates the topic (or reuses it), one application and key per
 /// sample, the Publish grant, the three subscriptions and the webhook allowlist entry, plus the
-/// notifications topic and applications for the two Blazor samples, then writes
-/// samples/samples.local.json for the samples to read. Running it again creates fresh applications.
+/// notifications topic and applications for the Blazor and console samples, then writes
+/// samples/samples.local.json for the samples to read. Running it again creates fresh applications;
+/// "setup-console" adds only the console samples' applications to an existing file.
 /// </summary>
 public static class SampleSetup
 {
@@ -43,6 +44,32 @@ public static class SampleSetup
             new PermissionRequest("Topic", notifications.TopicId, "Publish"), ct);
         settings.BlazorPublisher = new SampleApp { ApiKey = blazorPublisherKey };
         settings.BlazorSubscriber = await CreateSubscriberAsync(admin, notifications, "SignalR", $"blazor-{suffix}", null, ct);
+        return await RunConsoleAsync(admin, settings, ct);
+    }
+
+    /// <summary>
+    /// The console samples: ConsolePublisher with Publish on the notifications topic, and three
+    /// subscriptions there (SignalR, Pull and Webhook) that ConsoleSubscriber listens on together.
+    /// Touches only the Console* entries of <paramref name="settings"/>.
+    /// </summary>
+    public static async Task<SampleSettings> RunConsoleAsync(HttpClient admin, SampleSettings settings, CancellationToken ct = default)
+    {
+        var notifications = await EnsureTopicAsync(admin, settings.NotificationsTopicName, ct);
+        var suffix = $"console-{Guid.NewGuid().ToString("N")[..6]}";
+
+        var (publisherId, publisherKey) = await CreateAppAsync(admin, $"sample-console-publisher-{suffix[8..]}", ct);
+        await PostAsync(admin, $"api/v1/admin/applications/{publisherId}/permissions",
+            new PermissionRequest("Topic", notifications.TopicId, "Publish"), ct);
+        settings.ConsolePublisher = new SampleApp { ApiKey = publisherKey };
+
+        settings.ConsoleSignalR = await CreateSubscriberAsync(admin, notifications, "SignalR", suffix, null, ct);
+        settings.ConsolePull = await CreateSubscriberAsync(admin, notifications, "Pull", suffix, null, ct);
+
+        var listenUrl = settings.ConsoleWebhook.Url;
+        var webhookUrl = new Uri(new Uri(listenUrl), "webhooks/notifications");
+        await AllowHostAsync(admin, webhookUrl.Host, ct);
+        settings.ConsoleWebhook = await CreateSubscriberAsync(admin, notifications, "Webhook", suffix, webhookUrl.ToString(), ct);
+        settings.ConsoleWebhook.Url = listenUrl;
         return settings;
     }
 
