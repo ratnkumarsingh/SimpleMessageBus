@@ -51,17 +51,41 @@ Then set `Broker:Database:DeploySchemaOnStartup = false`. The script:
 
 Always pass `-b`, so `sqlcmd` stops at the first error. A failed migration rolls back and leaves no journal row; fix the cause and run the same script again.
 
-**C. Full install on a new server.** `db/BrokerDb_Full.sql` is committed and does everything B does. It also creates the database when it is missing, then adds the Admin application with its first key and the webhook host allowlist. Those are the rows the broker otherwise adds at startup from `Broker:Bootstrap:AdminApiKey` and `Broker:Webhooks:AllowedHosts`. From PowerShell:
+**C. Full install from one SQL file.** `db/install/BrokerDb_Full.sql` is plain T-SQL, so it runs as-is in SSMS or with `sqlcmd -b -S <server> -i db/install/BrokerDb_Full.sql`. It does everything B does, and it also:
+- creates the `BrokerDb` database when it is missing;
+- adds the Admin application with its first API key;
+- adds the webhook host allowlist.
 
-```powershell
-$key = dotnet run --project src/MessageBroker.Api -- new-api-key
-./db/install-database.ps1 -Server <server> -DatabaseName BrokerDb -AdminApiKey $key -WebhookAllowedHosts hooks.example.com,10.0.0.5
-```
+The broker otherwise adds those rows at startup from `Broker:Bootstrap:AdminApiKey` and `Broker:Webhooks:AllowedHosts`.
 
-- **Without PowerShell**, pass every variable to `sqlcmd` with `-v`, using `""` for an empty value. The file header shows the command. The wrapper exists because PowerShell mangles empty and quoted `-v` values.
-- **The key** is stored only as its SHA-256 hash. Keep the key itself in the secret store. With the key installed this way, you can leave `Broker:Bootstrap:AdminApiKey` unset.
-- **Re-running** the script is safe: it adds only what is missing.
-- **Regenerate** the file with `./db/build-release-script.ps1 -Full` whenever a script under `db/Migrations` or `db/Programmability` changes. Unit test U14b fails until you do.
+Edit the settings at the top of the file before you run it:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `AdminName` | `broker-admin` | The Admin application. |
+| `AdminApiKey` | empty | Leave it empty and the script generates a key and shows it once, in the final result (`NewApiKey`). Only its SHA-256 hash is stored, so put the key in the secret store straight away. |
+| `WebhookAllowedHosts` | empty | Comma-separated hosts, without scheme, port or path. Use `localhost` for local development. |
+
+- **Another database name:** replace `BrokerDb` in the two batches under the settings.
+- **The bootstrap key setting:** with the key installed this way, you can leave `Broker:Bootstrap:AdminApiKey` unset.
+- **Re-running** is safe. It applies only what is missing, and it generates no new key while the Admin has an active one.
+- **Regenerating:** run `./db/build-release-script.ps1 -Full` whenever a script under `db/Migrations` or `db/Programmability` changes. Unit test U14b fails until you do.
+
+**Onboarding an application.** `db/install/OnboardApplication.sql` adds one application that publishes or receives. Edit its settings, then run it the same way:
+- the application name;
+- the topics it publishes to;
+- the Pull or SignalR subscriptions it receives from.
+
+In one transaction, the script:
+- creates the application;
+- issues its key, shown once as `NewApiKey`;
+- creates missing topics;
+- grants `Publish` on the listed topics;
+- creates the subscriptions, which the application owns and can receive from.
+
+New subscriptions use the broker's default settings, which are listed in the script. Running the script again with the same values changes nothing.
+
+Webhook subscriptions are the exception: the broker encrypts their signing secret with its Data Protection keys, so create them through the API (4.3) or the dashboard.
 
 ### 2.3 Configuration
 Put settings in `appsettings.Production.json`, environment variables (`Broker__Webhooks__TimeoutSeconds=30`) or the service's secret store. Section 14 of the spec describes each setting; the ones operators must set are:
@@ -140,7 +164,7 @@ SELECT * FROM broker.vw_MessageStatus WHERE MessageId = @id;
 
 ## 4. Onboarding an application
 
-`samples/SamplePublisher/SampleSetup.cs` runs these same steps in code (`SamplePublisher setup`).
+`samples/SamplePublisher/SampleSetup.cs` runs these same steps in code (`SamplePublisher setup`). To do them in SQL instead, without the API, run `db/install/OnboardApplication.sql` (2.2 C); it covers everything here except webhook subscriptions.
 
 ### 4.1 Register it and issue a key
 ```powershell

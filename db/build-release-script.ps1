@@ -7,9 +7,9 @@
     It is built from the same embedded scripts, in the same order, as the DbUp deploy at startup.
     Apply it with: sqlcmd -b -S <server> -d <database> -i <file>
 
-    With -Full it writes the full install script instead (default db/BrokerDb_Full.sql, which is
-    committed): it also creates the database and adds the Admin application, its key and the webhook
-    host allowlist from sqlcmd -v variables. The file header lists the variables. Regenerate it
+    With -Full it writes the full install script instead (db/install/BrokerDb_Full.sql,
+    committed): plain T-SQL that also creates the database and adds the
+    Admin application, its key and the webhook host allowlist from settings at its top. Regenerate it
     whenever a script under db/Migrations or db/Programmability changes.
 .EXAMPLE
     ./db/build-release-script.ps1 -OutFile artifacts/broker-release.sql
@@ -23,7 +23,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 if (-not $OutFile) {
-    $OutFile = if ($Full) { Join-Path $PSScriptRoot 'BrokerDb_Full.sql' }
+    $OutFile = if ($Full) { Join-Path $PSScriptRoot 'install' 'BrokerDb_Full.sql' }
                else { Join-Path $PSScriptRoot '..' 'artifacts' 'broker-release.sql' }
 }
 $OutFile = [System.IO.Path]::GetFullPath($OutFile)
