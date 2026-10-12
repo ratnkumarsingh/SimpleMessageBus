@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using MessageBroker.Api.Hosting;
 using MessageBroker.Application.Security;
 using MessageBroker.Contracts.Models;
+using MessageBroker.Testing;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.SqlClient;
@@ -80,7 +81,7 @@ public sealed class BrokerUnderTest : IAsyncDisposable
         return ((IPEndPoint)listener.LocalEndpoint).Port;
     }
 
-    private sealed class Host(string connectionString, string adminKey) : WebApplicationFactory<Program>
+    private sealed class Host(string connectionString, string adminKey) : KestrelWebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {

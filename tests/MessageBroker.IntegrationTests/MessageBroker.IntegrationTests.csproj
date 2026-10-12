@@ -24,5 +24,9 @@
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- UseKestrel/StartServer on .NET 9 as well (built into WebApplicationFactory from .NET 10). -->
+    <Compile Include="..\Shared\KestrelWebApplicationFactory.cs" Link="Shared\KestrelWebApplicationFactory.cs" />
+  </ItemGroup>
 </Project>
 

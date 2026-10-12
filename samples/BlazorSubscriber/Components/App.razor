@@ -5,7 +5,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
-    <ResourcePreloader />
+    @Preloader
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["BlazorSubscriber.styles.css"]" />
     <ImportMap />
@@ -14,7 +14,7 @@
 
 <body>
     <Routes @rendermode="InteractiveServer" />
-    <ReconnectModal />
+    @Reconnect
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
 

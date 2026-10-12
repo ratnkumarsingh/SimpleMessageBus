@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using MessageBroker.Api.Hosting;
 using MessageBroker.Application.Security;
+using MessageBroker.Testing;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,7 +14,7 @@ namespace MessageBroker.IntegrationTests.Infrastructure;
 /// fixture, so startup only seeds the allowlist and the bootstrap admin key.
 /// </summary>
 public sealed class ApiFactory(string connectionString, IReadOnlyDictionary<string, string?>? settings = null)
-    : WebApplicationFactory<Program>
+    : KestrelWebApplicationFactory<Program>
 {
     public const string SeededHost = "hooks.internal";
 
