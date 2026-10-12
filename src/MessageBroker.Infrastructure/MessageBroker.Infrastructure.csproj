@@ -10,8 +10,8 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
-    <!-- BrokerDb_Full.sql is generated from these scripts, so it is not one of them. -->
-    <EmbeddedResource Include="..\..\db\**\*.sql" Exclude="..\..\db\BrokerDb_Full.sql" LinkBase="db" />
+    <!-- db/install holds scripts people run by hand: the generated full install and onboarding. -->
+    <EmbeddedResource Include="..\..\db\**\*.sql" Exclude="..\..\db\install\**" LinkBase="db" />
   </ItemGroup>
 </Project>
 

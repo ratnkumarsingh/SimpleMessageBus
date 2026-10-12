@@ -82,6 +82,34 @@ BEGIN
 END
 GO
 
+-- A new key in the format ApiKeys.Generate uses: "mbk_" + 12 characters, "_", 32 random bytes as base64url.
+-- Only the install and onboarding scripts call it; the broker issues keys in code.
+CREATE OR ALTER PROCEDURE broker.usp_ApiKey_Generate
+    @Key    varchar(100)  OUTPUT,
+    @Prefix varchar(32)   OUTPUT,
+    @Hash   varbinary(32) OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- 32 characters, so a random byte modulo 32 picks each one without bias.
+    DECLARE @Alphabet char(32) = 'abcdefghijkmnpqrstuvwxyz23456789';
+    DECLARE @Random varbinary(12) = CRYPT_GEN_RANDOM(12), @Secret varbinary(32) = CRYPT_GEN_RANDOM(32), @i int = 1;
+
+    SET @Prefix = 'mbk_';
+    WHILE @i <= 12
+    BEGIN
+        SET @Prefix += SUBSTRING(@Alphabet, CAST(SUBSTRING(@Random, @i, 1) AS int) % 32 + 1, 1);
+        SET @i += 1;
+    END
+
+    DECLARE @Base64 varchar(100) = CAST(N'' AS xml).value('xs:base64Binary(sql:variable("@Secret"))', 'varchar(100)');
+    SET @Key = @Prefix + '_' + REPLACE(REPLACE(REPLACE(@Base64, '=', ''), '+', '-'), '/', '_');
+    -- Keys are ASCII, so these bytes are the UTF-8 bytes ApiKeys.Hash hashes.
+    SET @Hash = HASHBYTES('SHA2_256', @Key);
+END
+GO
+
 CREATE OR ALTER PROCEDURE broker.usp_ApiKey_Deactivate
     @AppId uniqueidentifier,
     @KeyId uniqueidentifier
