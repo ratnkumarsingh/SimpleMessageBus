@@ -51,6 +51,18 @@ Then set `Broker:Database:DeploySchemaOnStartup = false`. The script:
 
 Always pass `-b`, so `sqlcmd` stops at the first error. A failed migration rolls back and leaves no journal row; fix the cause and run the same script again.
 
+**C. Full install on a new server.** `db/BrokerDb_Full.sql` is committed and does everything B does. It also creates the database when it is missing, then adds the Admin application with its first key and the webhook host allowlist. Those are the rows the broker otherwise adds at startup from `Broker:Bootstrap:AdminApiKey` and `Broker:Webhooks:AllowedHosts`. From PowerShell:
+
+```powershell
+$key = dotnet run --project src/MessageBroker.Api -- new-api-key
+./db/install-database.ps1 -Server <server> -DatabaseName BrokerDb -AdminApiKey $key -WebhookAllowedHosts hooks.example.com,10.0.0.5
+```
+
+- **Without PowerShell**, pass every variable to `sqlcmd` with `-v`, using `""` for an empty value. The file header shows the command. The wrapper exists because PowerShell mangles empty and quoted `-v` values.
+- **The key** is stored only as its SHA-256 hash. Keep the key itself in the secret store. With the key installed this way, you can leave `Broker:Bootstrap:AdminApiKey` unset.
+- **Re-running** the script is safe: it adds only what is missing.
+- **Regenerate** the file with `./db/build-release-script.ps1 -Full` whenever a script under `db/Migrations` or `db/Programmability` changes. Unit test U14b fails until you do.
+
 ### 2.3 Configuration
 Put settings in `appsettings.Production.json`, environment variables (`Broker__Webhooks__TimeoutSeconds=30`) or the service's secret store. Section 14 of the spec describes each setting; the ones operators must set are:
 
